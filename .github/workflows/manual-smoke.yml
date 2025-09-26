@@ -1,0 +1,20 @@
+name: manual-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Optional note'
+        required: false
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show context
+        run: |
+          echo "event_name=${GITHUB_EVENT_NAME}"
+          echo "ref=${GITHUB_REF}"
+          echo "sha=${GITHUB_SHA}"
+      - name: Echo OK
+        run: echo "manual workflow is running"
