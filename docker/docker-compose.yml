@@ -1,0 +1,26 @@
+services:
+  karing:
+    image: ghcr.io/recelsus/karing:latest
+    # Build locally instead of pulling from GHCR (uncomment below) / GHCR から取得せずローカルでビルドする場合は下記を有効化
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
+    container_name: karing
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Override as needed; uncomment examples below / 必要に応じて上書き（例をコメント解除）
+      # KARING_BASE_PATH: /myapp
+      # KARING_LIMIT: "100"
+      # KARING_MAX_FILE_BYTES: "20971520"
+      # KARING_MAX_TEXT_BYTES: "10485760"
+      # KARING_TRUSTED_PROXY: "1"     # trust proxy headers / プロキシヘッダを信頼
+      # KARING_NO_AUTH: "1"           # dev only (disable auth) / 開発用途のみ（認証無効）
+    volumes:
+      - karing-data:/var/lib/karing   # data dir / データ
+      - karing-logs:/var/log/karing   # logs dir / ログ
+
+volumes:
+  karing-data:
+  karing-logs:
