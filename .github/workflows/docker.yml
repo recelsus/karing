@@ -15,8 +15,6 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # Enable on push to master, and always allow manual (workflow_dispatch)
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
