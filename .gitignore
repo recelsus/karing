@@ -1,0 +1,131 @@
+# -----------------------------
+# OS / Editor / IDE
+# -----------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.tags
+tags
+.idea/
+.vscode/
+.history/
+.cache/
+.ccache/
+*.orig
+*.rej
+
+# -----------------------------
+# Build System (CMake, Make, Ninja, etc.)
+# -----------------------------
+/build/
+/build-*/
+/cmake-build-*/
+
+# CMake中間物
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+DartConfiguration.tcl
+Testing/
+_install/
+_depends/
+# Dependency with FetchContent or CPM.cmake
+/_deps/
+
+# Ninja
+.build/
+.ninja_deps
+.ninja_log
+build.ninja
+
+# Make
+*.o
+*.lo
+*.obj
+*.gch
+*.pch
+
+# Library / Binary
+*.a
+*.la
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# LTO and Debug Symbols
+*.lto
+*.dSYM/
+*.pdb
+
+# -----------------------------
+# Tooling / Analysis
+# -----------------------------
+compile_commands.json
+.ccls-cache/
+
+# AST / IR
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+lcov.info
+coverage/
+sanitizer*.log
+valgrind*.log
+
+# -----------------------------
+# Temporary Files / Logs
+# -----------------------------
+*.log
+logs/
+*.pid
+*.sock
+tmp/
+run/
+
+# -----------------------------
+# SQLite Files
+# -----------------------------
+*.db
+*.db-shm
+*.db-wal
+
+# -----------------------------
+# certificates / Keys
+# -----------------------------
+*.pem
+*.crt
+*.key
+
+# -----------------------------
+# package managers
+# -----------------------------
+# Conan
+.conan/
+conanbuild/
+conaninfo.txt
+
+# vcpkg
+vcpkg_installed/
+vcpkg*.log
+
+# CPM.cmake cache
+CPMCache/
+
+# -----------------------------
+# Containerization
+# -----------------------------
+.env
+.env.*
+dist/
+
