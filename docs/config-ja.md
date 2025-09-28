@@ -33,5 +33,5 @@ DB の既定パス
 - TLS: `--tls`, `--tls-cert`, `--tls-key`, `--require-tls`
 
 ベースパス
-- ルート `/` と `<base_path>` の両方でエンドポイントを提供（例: `/myapp`, `/myapp/health`, `/myapp/restore`）。
+- ルート `/` と `<base_path>` の両方でエンドポイントを提供（例: `/myapp`, `/myapp/health`, `/myapp/search`）。
 - 通常は `karing.json` に設定し、必要に応じて CLI/ENV で上書きしてください。

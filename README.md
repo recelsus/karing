@@ -59,14 +59,14 @@ Endpoints
 - `PUT /?id=` — replace
 - `PATCH /?id=` — partial update
 - `DELETE /?id=` — logical delete
-- `POST /restore?id=` — restore latest snapshot
 - `GET /health` — service/build/limits/TLS/base_path
 - `GET|POST /search` — list/search API (JSON only)
   - No params: latest items up to `limit` (default: runtime limit)
-  - `limit`, `offset`
+  - `limit`
   - `q` — FTS5 query (text: content, file: filename)
   - `type` — `text` | `file` (optional filter)
-  - Response: `{ success: true, message: "OK", data: [...], meta: { count, limit, offset, total? } }`
+  - Response: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
+  - Auth: `GET /search` is allowed for read; `POST /search` is also treated as a read operation (no write role required).
 
 Notes
 - Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/restore`, `/myapp/search`.

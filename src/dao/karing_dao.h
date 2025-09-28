@@ -21,9 +21,7 @@ class KaringDao {
 
 
   // Insert or rotate a text record. Returns row id or <0 on error.
-  int insert_text(const std::string& content,
-                  const std::string& client_ip = std::string(),
-                  const std::optional<int>& api_key_id = std::nullopt);
+  int insert_text(const std::string& content);
 
   // Logical delete: set is_active=0 and clear payload.
   bool logical_delete(int id);
@@ -34,20 +32,18 @@ class KaringDao {
   // Insert file blob.
   int insert_file(const std::string& filename,
                   const std::string& mime,
-                  const std::string& data,
-                  const std::string& client_ip = std::string(),
-                  const std::optional<int>& api_key_id = std::nullopt);
+                  const std::string& data);
 
   // Fetch single by id.
   std::optional<KaringRecord> get_by_id(int id);
   // Fetch file blob by id (active + is_file=1).
   bool get_file_blob(int id, std::string& out_mime, std::string& out_filename, std::string& out_data);
 
-  // List latest active up to limit, with offset.
-  std::vector<KaringRecord> list_latest(int limit, int offset = 0);
+  // List latest active up to limit.
+  std::vector<KaringRecord> list_latest(int limit);
 
-  bool try_search_fts(const std::string& fts_query, int limit, int offset, std::vector<KaringRecord>& out);
-  bool try_search_fts_filtered(const std::string& fts_query, const std::optional<int>& is_file, int limit, int offset, std::vector<KaringRecord>& out);
+  bool try_search_fts(const std::string& fts_query, int limit, std::vector<KaringRecord>& out);
+  bool try_search_fts_filtered(const std::string& fts_query, const std::optional<int>& is_file, int limit, std::vector<KaringRecord>& out);
 
   // Count active rows.
   int count_active();
@@ -67,27 +63,18 @@ class KaringDao {
     bool order_desc{true};
   };
 
-  std::vector<KaringRecord> list_filtered(int limit, int offset, const Filters& f);
+  std::vector<KaringRecord> list_filtered(int limit, const Filters& f);
   long long count_filtered(const Filters& f);
 
   // Replace (PUT) operations
-  bool update_text(int id, const std::string& content,
-                   const std::string& client_ip = std::string(),
-                   const std::optional<int>& api_key_id = std::nullopt);
-  bool update_file(int id, const std::string& filename, const std::string& mime, const std::string& data,
-                   const std::string& client_ip = std::string(),
-                   const std::optional<int>& api_key_id = std::nullopt);
+  bool update_text(int id, const std::string& content);
+  bool update_file(int id, const std::string& filename, const std::string& mime, const std::string& data);
 
   // Patch (partial) operations
-  bool patch_text(int id, const std::optional<std::string>& content,
-                  const std::string& client_ip = std::string(),
-                  const std::optional<int>& api_key_id = std::nullopt);
-  bool patch_file(int id, const std::optional<std::string>& filename, const std::optional<std::string>& mime, const std::optional<std::string>& data,
-                  const std::string& client_ip = std::string(),
-                  const std::optional<int>& api_key_id = std::nullopt);
+  bool patch_text(int id, const std::optional<std::string>& content);
+  bool patch_file(int id, const std::optional<std::string>& filename, const std::optional<std::string>& mime, const std::optional<std::string>& data);
 
-  // Restore latest snapshot (text only) from overwrite_log; returns true on success.
-  bool restore_latest_snapshot(int id);
+  // restore_latest_snapshot removed
 
  private:
   std::string db_path_;

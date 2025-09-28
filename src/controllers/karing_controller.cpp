@@ -151,7 +151,7 @@ void karing_controller::search(const HttpRequestPtr& req, std::function<void(con
   auto get_str = [&](const char* k)->std::string{ if (body.isMember(k) && body[k].isString()) return body[k].asString(); auto it=params.find(k); return it!=params.end()? it->second : std::string(); };
   auto get_int = [&](const char* k, int def)->int{ if (body.isMember(k) && body[k].isInt()) return body[k].asInt(); auto it=params.find(k); if (it!=params.end()) { try { return std::stoi(it->second);} catch(...){} } return def; };
 
-  int offset = std::max(0, get_int("offset", 0));
+  int offset = 0; // offset is not supported (fixed to 0)
   int lim = get_int("limit", options::runtime_limit()); lim = std::min(std::max(1, lim), options::runtime_limit());
   std::string q = get_str("q");
   std::optional<int> is_file; std::string ty=get_str("type"); if (ty=="text") is_file=0; else if (ty=="file") is_file=1;
@@ -165,19 +165,18 @@ void karing_controller::search(const HttpRequestPtr& req, std::function<void(con
     bool ok=false;
     if (is_file.has_value()) {
       // in-memory filter for type
-      std::vector<dao::KaringRecord> tmp; ok = dao.try_search_fts(qb.fts, lim+offset, 0, tmp);
+      std::vector<dao::KaringRecord> tmp; ok = dao.try_search_fts(qb.fts, lim, tmp);
       for (auto& r : tmp) if ((int)r.is_file == *is_file) list.push_back(std::move(r));
-      if (offset < (int)list.size()) { int end = std::min((int)list.size(), offset+lim); std::vector<dao::KaringRecord> sliced(list.begin()+offset, list.begin()+end); list.swap(sliced); } else list.clear();
     } else {
-      ok = dao.try_search_fts(qb.fts, lim, offset, list);
+      ok = dao.try_search_fts(qb.fts, lim, list);
     }
     if (!ok) return cb(karing::http::error(HttpStatusCode::k503ServiceUnavailable, "E_FTS_UNAVAILABLE", "Full-text search unavailable"));
-    meta["count"]=(int)list.size(); meta["limit"]=lim; meta["offset"]=offset;
+    meta["count"]=(int)list.size(); meta["limit"]=lim;
   } else {
     // Latest listing
-    if (is_file.has_value()) { dao::KaringDao::Filters f; f.is_file=*is_file; f.order_desc=true; list=dao.list_filtered(lim, offset, f); meta["total"]=(Json::Int64)dao.count_filtered(f); }
-    else { list = dao.list_latest(lim, offset); meta["total"]=(Json::Int64)dao.count_active(); }
-    meta["count"]=(int)list.size(); meta["limit"]=lim; meta["offset"]=offset;
+    if (is_file.has_value()) { dao::KaringDao::Filters f; f.is_file=*is_file; f.order_desc=true; list=dao.list_filtered(lim, f); meta["total"]=(Json::Int64)dao.count_filtered(f); }
+    else { list = dao.list_latest(lim); meta["total"]=(Json::Int64)dao.count_active(); }
+    meta["count"]=(int)list.size(); meta["limit"]=lim;
   }
   Json::Value data = Json::arrayValue; for (auto& r : list) data.append(record_to_json(r));
   return cb(karing::http::ok(data, meta));
@@ -186,7 +185,7 @@ void karing_controller::search(const HttpRequestPtr& req, std::function<void(con
 void karing_controller::post_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
   dao::KaringDao dao(options::db_path());
   const auto& ctype = req->getHeader("content-type");
-  std::string client_ip = req->getPeerAddr().toIp();
+  // client_ip removed
 
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject();
@@ -196,7 +195,7 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
     if ((long long)content.size() > (long long)maxText) {
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
-    int id = dao.insert_text(content, client_ip, std::nullopt);
+    int id = dao.insert_text(content);
     if (id < 0) return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Insert failed"));
     return cb(karing::http::created(id));
   }
@@ -224,7 +223,7 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
     }
 
-    int id = dao.insert_file(filenameParam, mime, data, client_ip, std::nullopt);
+    int id = dao.insert_file(filenameParam, mime, data);
     if (id < 0) return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Insert failed"));
     return cb(karing::http::created(id));
   }
@@ -238,7 +237,7 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
   const auto& ctype = req->getHeader("content-type");
-  std::string client_ip = req->getPeerAddr().toIp();
+  // client_ip removed
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject();
     if (!json || !(*json)["content"].isString()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
@@ -246,7 +245,7 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
     const auto maxText = karing::options::max_text_bytes();
     if ((long long)content.size() > (long long)maxText) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     // Ignore client-provided syntax; always treat as plain text
-    if (!dao.update_text(id, content, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
+    if (!dao.update_text(id, content)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     Json::Value d; d["id"] = id; return cb(karing::http::ok(d));
   }
   if (ctype.find("multipart/form-data") != std::string::npos) {
@@ -259,7 +258,7 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
     std::string filenameParam = req->getParameter("filename"); if (filenameParam.empty()) filenameParam = f.getFileName();
     std::string data(f.fileData(), f.fileLength());
     const auto maxFile = karing::options::max_file_bytes(); if ((long long)data.size() > (long long)maxFile) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
-    if (!dao.update_file(id, filenameParam, mime, data, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
+    if (!dao.update_file(id, filenameParam, mime, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     Json::Value dj; dj["id"] = id; return cb(karing::http::ok(dj));
   }
   return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported content-type"));
@@ -271,7 +270,7 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
   const auto& ctype = req->getHeader("content-type");
-  std::string client_ip = req->getPeerAddr().toIp();
+  // client_ip removed
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject(); if (!json) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "JSON required"));
     std::optional<std::string> content;
@@ -280,7 +279,7 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
       if ((long long)content->size() > (long long)karing::options::max_text_bytes()) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
     // Ignore syntax field
-    if (!dao.patch_text(id, content, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
+    if (!dao.patch_text(id, content)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
     Json::Value dd; dd["id"] = id; return cb(karing::http::ok(dd));
   }
   if (ctype.find("multipart/form-data") != std::string::npos) {
@@ -299,7 +298,7 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
       if (!(starts_with(p, "image/") || starts_with(p, "audio/"))) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
       mime = p;
     }
-    if (!dao.patch_file(id, filename, mime, data, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
+    if (!dao.patch_file(id, filename, mime, data)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
     Json::Value de; de["id"] = id; return cb(karing::http::ok(de));
   }
   return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported content-type"));
@@ -316,14 +315,7 @@ void karing_controller::delete_karing(const HttpRequestPtr& req, std::function<v
   cb(resp);
 }
 
-void karing_controller::restore_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
-  auto params = req->getParameters();
-  if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
-  int id = std::stoi(params.at("id"));
-  if (!dao.restore_latest_snapshot(id)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "No restorable snapshot"));
-  Json::Value d; d["id"] = id; return cb(karing::http::ok(d));
-}
+// restore endpoint removed
 
 void karing_controller::health(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
   dao::KaringDao dao(options::db_path());

@@ -38,9 +38,7 @@ KaringDao::KaringDao(std::string db_path) : db_path_(std::move(db_path)) {}
 
 // preallocate_slots removed (no longer used)
 
-int KaringDao::insert_text(const std::string& content,
-                           const std::string& client_ip,
-                           const std::optional<int>& api_key_id) {
+int KaringDao::insert_text(const std::string& content) {
   Db db(db_path_);
   if (!db.ok()) { LOG_ERROR << "sqlite open failed at '" << db_path_ << "'"; return -1; }
   // Decide: insert new row or overwrite oldest active when reaching limit
@@ -52,15 +50,14 @@ int KaringDao::insert_text(const std::string& content,
   int limit = karing::options::runtime_limit();
   if (active < limit) {
     const char* sql =
-        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, client_ip, api_key_id, revision, is_active)\n"
-        "VALUES(?, 0, NULL, NULL, NULL, ?, NULL, ?, ?, 0, 1);";
+        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, revision, is_active)\n"
+        "VALUES(?, 0, NULL, NULL, NULL, ?, NULL, 0, 1);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) { LOG_ERROR << "prepare failed (insert_text): " << sqlite3_errmsg(db); return -1; }
     int idx = 1;
     sqlite3_bind_text(stmt, idx++, content.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, idx++, now_epoch());
-    if (!client_ip.empty()) sqlite3_bind_text(stmt, idx++, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(stmt, idx++);
-    if (api_key_id.has_value()) sqlite3_bind_int(stmt, idx++, *api_key_id); else sqlite3_bind_null(stmt, idx++);
+    
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) { LOG_ERROR << "step failed (insert_text) rc=" << rc << ": " << sqlite3_errmsg(db); return -1; }
@@ -75,15 +72,14 @@ int KaringDao::insert_text(const std::string& content,
   if (target_id < 0) {
     // Fallback: insert if none found
     const char* sql =
-        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, client_ip, api_key_id, revision, is_active)\n"
-        "VALUES(?, 0, NULL, NULL, NULL, ?, NULL, ?, ?, 0, 1);";
+        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, revision, is_active)\n"
+        "VALUES(?, 0, NULL, NULL, NULL, ?, NULL, 0, 1);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) { LOG_ERROR << "prepare failed (insert_text): " << sqlite3_errmsg(db); return -1; }
     int idx = 1;
     sqlite3_bind_text(stmt, idx++, content.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, idx++, now_epoch());
-    if (!client_ip.empty()) sqlite3_bind_text(stmt, idx++, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(stmt, idx++);
-    if (api_key_id.has_value()) sqlite3_bind_int(stmt, idx++, *api_key_id); else sqlite3_bind_null(stmt, idx++);
+    
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) { LOG_ERROR << "step failed (insert_text fallback) rc=" << rc << ": " << sqlite3_errmsg(db); return -1; }
@@ -91,13 +87,12 @@ int KaringDao::insert_text(const std::string& content,
   }
   const char* upd =
       "UPDATE karing SET content=?, is_file=0, filename=NULL, mime=NULL, content_blob=NULL,\n"
-      "created_at=?, updated_at=NULL, client_ip=?, api_key_id=?, revision=revision+1, is_active=1 WHERE id=?;";
+      "created_at=?, updated_at=NULL, revision=revision+1, is_active=1 WHERE id=?;";
   sqlite3_stmt* us = nullptr;
   if (sqlite3_prepare_v2(db, upd, -1, &us, nullptr) != SQLITE_OK) { LOG_ERROR << "prepare failed (overwrite text): " << sqlite3_errmsg(db); return -1; }
   int u = 1; sqlite3_bind_text(us, u++, content.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(us, u++, now_epoch());
-  if (!client_ip.empty()) sqlite3_bind_text(us, u++, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(us, u++);
-  if (api_key_id.has_value()) sqlite3_bind_int(us, u++, *api_key_id); else sqlite3_bind_null(us, u++);
+  
   sqlite3_bind_int(us, u++, target_id);
   int rc2 = sqlite3_step(us);
   sqlite3_finalize(us);
@@ -153,8 +148,7 @@ bool KaringDao::get_file_blob(int id, std::string& out_mime, std::string& out_fi
   return ok;
 }
 
-bool KaringDao::update_text(int id, const std::string& content,
-                            const std::string& client_ip, const std::optional<int>& api_key_id) {
+bool KaringDao::update_text(int id, const std::string& content) {
   Db db(db_path_);
   if (!db.ok()) { LOG_ERROR << "sqlite open failed at '" << db_path_ << "'"; return false; }
   // load old (only to ensure row exists)
@@ -180,8 +174,7 @@ bool KaringDao::update_text(int id, const std::string& content,
   return true;
 }
 
-bool KaringDao::update_file(int id, const std::string& filename, const std::string& mime, const std::string& data,
-                            const std::string& client_ip, const std::optional<int>& api_key_id) {
+bool KaringDao::update_file(int id, const std::string& filename, const std::string& mime, const std::string& data) {
   Db db(db_path_);
   if (!db.ok()) { LOG_ERROR << "sqlite open failed at '" << db_path_ << "'"; return false; }
   // load old
@@ -211,25 +204,10 @@ bool KaringDao::update_file(int id, const std::string& filename, const std::stri
   sqlite3_finalize(stmt);
   if (rc != SQLITE_DONE || sqlite3_changes(db) <= 0) { LOG_ERROR << "step/changes failed (update_file) rc=" << rc << ": " << sqlite3_errmsg(db); return false; }
   trim_active_over_limit(db, karing::options::runtime_limit());
-  // audit
-  sqlite3_stmt* lw = nullptr;
-  if (sqlite3_prepare_v2(db, "INSERT INTO overwrite_log(replaced_rowid, at, by_api_key_id, from_ip, action, fields, file_hash_before, file_len_before, mime_before, filename_before) VALUES(?, strftime('%s','now'), ?, ?, 'update', '[\"content_blob\",\"mime\",\"filename\"]', ?, ?, ?, ?);", -1, &lw, nullptr) == SQLITE_OK) {
-    sqlite3_bind_int(lw, 1, id);
-    if (api_key_id.has_value()) sqlite3_bind_int(lw, 2, *api_key_id); else sqlite3_bind_null(lw, 2);
-    if (!client_ip.empty()) sqlite3_bind_text(lw, 3, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(lw, 3);
-    std::string hash = oldBlob.empty()? std::string(): karing::str::sha256_hex(oldBlob);
-    if (!hash.empty()) sqlite3_bind_text(lw, 4, hash.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(lw, 4);
-    sqlite3_bind_int(lw, 5, (int)oldBlob.size());
-    if (!oldMime.empty()) sqlite3_bind_text(lw, 6, oldMime.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(lw, 6);
-    if (!oldFilename.empty()) sqlite3_bind_text(lw, 7, oldFilename.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(lw, 7);
-    sqlite3_step(lw);
-  }
-  if (lw) sqlite3_finalize(lw);
   return true;
 }
 
-bool KaringDao::patch_text(int id, const std::optional<std::string>& content,
-                           const std::string& client_ip, const std::optional<int>& api_key_id) {
+bool KaringDao::patch_text(int id, const std::optional<std::string>& content) {
   Db db(db_path_);
   if (!db.ok()) { LOG_ERROR << "sqlite open failed at '" << db_path_ << "'"; return false; }
   // Load current values
@@ -246,11 +224,10 @@ bool KaringDao::patch_text(int id, const std::optional<std::string>& content,
   }
   sqlite3_finalize(stmt);
   if (is_file != 0) return false; // refuse to patch non-text
-  return update_text(id, content.value_or(curContent), client_ip, api_key_id);
+  return update_text(id, content.value_or(curContent));
 }
 
-bool KaringDao::patch_file(int id, const std::optional<std::string>& filename, const std::optional<std::string>& mime, const std::optional<std::string>& data,
-                           const std::string& client_ip, const std::optional<int>& api_key_id) {
+bool KaringDao::patch_file(int id, const std::optional<std::string>& filename, const std::optional<std::string>& mime, const std::optional<std::string>& data) {
   Db db(db_path_);
   if (!db.ok()) { LOG_ERROR << "sqlite open failed at '" << db_path_ << "'"; return false; }
   // Load current values
@@ -270,38 +247,13 @@ bool KaringDao::patch_file(int id, const std::optional<std::string>& filename, c
   }
   sqlite3_finalize(stmt);
   if (is_file == 0) return false; // refuse to patch non-file
-  return update_file(id, filename.value_or(curFilename), mime.value_or(curMime), data.value_or(curData), client_ip, api_key_id);
+  return update_file(id, filename.value_or(curFilename), mime.value_or(curMime), data.value_or(curData));
 }
 
-bool KaringDao::restore_latest_snapshot(int id) {
-  Db db(db_path_);
-  if (!db.ok()) return false;
-  // find latest snapshot with content_before
-  const char* q = "SELECT content_before FROM overwrite_log WHERE replaced_rowid=? AND content_before IS NOT NULL ORDER BY at DESC, id DESC LIMIT 1;";
-  sqlite3_stmt* st=nullptr; if (sqlite3_prepare_v2(db, q, -1, &st, nullptr)!=SQLITE_OK) return false;
-  sqlite3_bind_int(st, 1, id);
-  std::string content;
-  bool ok = false;
-  if (sqlite3_step(st)==SQLITE_ROW) {
-    if (const unsigned char* t = sqlite3_column_text(st, 0)) content = reinterpret_cast<const char*>(t);
-    ok = !content.empty();
-  }
-  sqlite3_finalize(st);
-  if (!ok) return false;
-  // apply restore
-  const char* u = "UPDATE karing SET content=?, is_file=0, filename=NULL, mime=NULL, content_blob=NULL, updated_at=strftime('%s','now'), revision=revision+1, is_active=1 WHERE id=?;";
-  sqlite3_stmt* us=nullptr; if (sqlite3_prepare_v2(db, u, -1, &us, nullptr)!=SQLITE_OK) return false;
-  sqlite3_bind_text(us, 1, content.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_int(us, 2, id);
-  int rc = sqlite3_step(us);
-  sqlite3_finalize(us);
-  return rc == SQLITE_DONE && sqlite3_changes(db) > 0;
-}
+// restore_latest_snapshot removed
 int KaringDao::insert_file(const std::string& filename,
                            const std::string& mime,
-                           const std::string& data,
-                           const std::string& client_ip,
-                           const std::optional<int>& api_key_id) {
+                           const std::string& data) {
   Db db(db_path_);
   if (!db.ok()) return -1;
   int active = 0; sqlite3_stmt* count_st = nullptr;
@@ -312,8 +264,8 @@ int KaringDao::insert_file(const std::string& filename,
   int limit = karing::options::runtime_limit();
   if (active < limit) {
     const char* sql =
-        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, client_ip, api_key_id, revision, is_active)\n"
-        "VALUES(NULL, 1, ?, ?, ?, ?, NULL, ?, ?, 0, 1);";
+        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, revision, is_active)\n"
+        "VALUES(NULL, 1, ?, ?, ?, ?, NULL, 0, 1);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return -1;
     int idx = 1;
@@ -321,8 +273,7 @@ int KaringDao::insert_file(const std::string& filename,
     sqlite3_bind_text(stmt, idx++, mime.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_blob(stmt, idx++, data.data(), (int)data.size(), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, idx++, now_epoch());
-    if (!client_ip.empty()) sqlite3_bind_text(stmt, idx++, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(stmt, idx++);
-    if (api_key_id.has_value()) sqlite3_bind_int(stmt, idx++, *api_key_id); else sqlite3_bind_null(stmt, idx++);
+    
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) return -1;
@@ -336,8 +287,8 @@ int KaringDao::insert_file(const std::string& filename,
   if (target_id < 0) {
     // fallback insert
     const char* sql =
-        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, client_ip, api_key_id, revision, is_active)\n"
-        "VALUES(NULL, 1, ?, ?, ?, ?, NULL, ?, ?, 0, 1);";
+        "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, revision, is_active)\n"
+        "VALUES(NULL, 1, ?, ?, ?, ?, NULL, 0, 1);";
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return -1;
     int idx = 1;
@@ -345,8 +296,6 @@ int KaringDao::insert_file(const std::string& filename,
     sqlite3_bind_text(stmt, idx++, mime.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_blob(stmt, idx++, data.data(), (int)data.size(), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt, idx++, now_epoch());
-    if (!client_ip.empty()) sqlite3_bind_text(stmt, idx++, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(stmt, idx++);
-    if (api_key_id.has_value()) sqlite3_bind_int(stmt, idx++, *api_key_id); else sqlite3_bind_null(stmt, idx++);
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     if (rc != SQLITE_DONE) return -1;
@@ -354,15 +303,14 @@ int KaringDao::insert_file(const std::string& filename,
   }
   const char* upd =
       "UPDATE karing SET content=NULL, is_file=1, filename=?, mime=?, content_blob=?,\n"
-      "updated_at=NULL, created_at=?, client_ip=?, api_key_id=?, revision=revision+1, is_active=1 WHERE id=?;";
+      "updated_at=NULL, created_at=?, revision=revision+1, is_active=1 WHERE id=?;";
   sqlite3_stmt* us = nullptr;
   if (sqlite3_prepare_v2(db, upd, -1, &us, nullptr) != SQLITE_OK) return -1;
   int u=1; sqlite3_bind_text(us, u++, filename.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(us, u++, mime.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_blob(us, u++, data.data(), (int)data.size(), SQLITE_TRANSIENT);
   sqlite3_bind_int64(us, u++, now_epoch());
-  if (!client_ip.empty()) sqlite3_bind_text(us, u++, client_ip.c_str(), -1, SQLITE_TRANSIENT); else sqlite3_bind_null(us, u++);
-  if (api_key_id.has_value()) sqlite3_bind_int(us, u++, *api_key_id); else sqlite3_bind_null(us, u++);
+  
   sqlite3_bind_int(us, u++, target_id);
   int rc2 = sqlite3_step(us);
   sqlite3_finalize(us);
@@ -393,15 +341,14 @@ std::optional<KaringRecord> KaringDao::get_by_id(int id) {
   return out;
 }
 
-std::vector<KaringRecord> KaringDao::list_latest(int limit, int offset) {
+std::vector<KaringRecord> KaringDao::list_latest(int limit) {
   Db db(db_path_);
   std::vector<KaringRecord> v;
   if (!db.ok()) return v;
-  const char* sql = "SELECT id, is_file, content, filename, mime, created_at, updated_at FROM karing WHERE is_active=1 ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?;";
+  const char* sql = "SELECT id, is_file, content, filename, mime, created_at, updated_at FROM karing WHERE is_active=1 ORDER BY created_at DESC, id DESC LIMIT ?;";
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return v;
   sqlite3_bind_int(stmt, 1, limit);
-  sqlite3_bind_int(stmt, 2, offset);
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     KaringRecord r{};
     r.id = sqlite3_column_int(stmt, 0);
@@ -422,20 +369,19 @@ return v;
 
 // search_text removed
 
-bool KaringDao::try_search_fts(const std::string& fts_query, int limit, int offset, std::vector<KaringRecord>& v) {
+bool KaringDao::try_search_fts(const std::string& fts_query, int limit, std::vector<KaringRecord>& v) {
   Db db(db_path_);
   if (!db.ok()) return false;
   const char* sql =
       "SELECT k.id, k.is_file, k.content, k.filename, k.mime, k.created_at, k.updated_at\n"
       "FROM karing k JOIN karing_fts f ON f.rowid = k.id\n"
       "WHERE k.is_active=1 AND karing_fts MATCH ?\n"
-      "ORDER BY k.created_at DESC, k.id DESC LIMIT ? OFFSET ?;";
+      "ORDER BY k.created_at DESC, k.id DESC LIMIT ?;";
   sqlite3_stmt* stmt = nullptr;
   int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
   if (rc != SQLITE_OK) return false;
   sqlite3_bind_text(stmt, 1, fts_query.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 2, limit);
-  sqlite3_bind_int(stmt, 3, offset);
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     KaringRecord r{};
     r.id = sqlite3_column_int(stmt, 0);
@@ -457,7 +403,7 @@ bool KaringDao::try_search_fts(const std::string& fts_query, int limit, int offs
 
 
 
-std::vector<KaringRecord> KaringDao::list_filtered(int limit, int offset, const Filters& f) {
+std::vector<KaringRecord> KaringDao::list_filtered(int limit, const Filters& f) {
   Db db(db_path_);
   std::vector<KaringRecord> v;
   if (!db.ok()) return v;
@@ -467,7 +413,7 @@ std::vector<KaringRecord> KaringDao::list_filtered(int limit, int offset, const 
   if (f.mime) sql += " AND mime = ?";
   if (f.filename) sql += " AND filename = ?";
   sql += f.order_desc ? " ORDER BY created_at DESC, id DESC" : " ORDER BY created_at ASC, id ASC";
-  sql += " LIMIT ? OFFSET ?";
+  sql += " LIMIT ?";
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return v;
   int idx = 1;
@@ -475,7 +421,6 @@ std::vector<KaringRecord> KaringDao::list_filtered(int limit, int offset, const 
   if (f.mime) sqlite3_bind_text(stmt, idx++, f.mime->c_str(), -1, SQLITE_TRANSIENT);
   if (f.filename) sqlite3_bind_text(stmt, idx++, f.filename->c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, idx++, limit);
-  sqlite3_bind_int(stmt, idx++, offset);
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     KaringRecord r{};
     r.id = sqlite3_column_int(stmt, 0);

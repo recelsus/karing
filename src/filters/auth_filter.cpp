@@ -136,6 +136,11 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
   // Enforce role: GET/HEAD/OPTIONSはread、他はwrite
   auto method = req->getMethod();
   bool writeMethod = !(method==drogon::Get || method==drogon::Head || method==drogon::Options);
+  // Exception: allow POST /search as read operation
+  if (method==drogon::Post) {
+    const auto& p = req->path();
+    if (p == "/search") writeMethod = false; // treat as read
+  }
   if (writeMethod && !(role=="write" || role=="admin")) { sqlite3_close(db); auto resp=drogon::HttpResponse::newHttpResponse(); resp->setStatusCode(HttpStatusCode::k403Forbidden); fcb(resp); return; }
 
   // Update usage

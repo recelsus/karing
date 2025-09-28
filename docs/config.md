@@ -33,5 +33,5 @@ Runtime overrides (env/CLI)
 - TLS: `--tls`, `--tls-cert`, `--tls-key`, `--require-tls`
 
 Base path
-- The same endpoints are served at `/` and `<base_path>` (e.g., `/myapp`, `/myapp/health`, `/myapp/restore`).
+- The same endpoints are served at `/` and `<base_path>` (e.g., `/myapp`, `/myapp/health`, `/myapp/search`).
 - Prefer configuring it in `karing.json`; CLI/ENV take precedence when present.

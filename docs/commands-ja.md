@@ -44,8 +44,7 @@ API キー管理（CLI）
   - `curl -X POST 'http://localhost:8080/' -H 'Content-Type: application/json' -H 'X-API-Key: YOUR_KEY' -d '{"content":"hello"}'`
 - ファイル作成
   - `curl -X POST 'http://localhost:8080/' -H 'X-API-Key: YOUR_KEY' -F 'file=@./sample.png' -F 'mime=image/png' -F 'filename=sample.png'`
-- 復元
-  - `curl -X POST 'http://localhost:8080/restore?id=123' -H 'X-API-Key: YOUR_KEY'`
+  
 
 DB/設定
 - DB/上限の確認だけして終了
@@ -60,4 +59,3 @@ Docker（GHCR）
   - `docker run --rm -p 8080:8080 -v karing-data:/var/lib/karing ghcr.io/recelsus/karing:latest`
 - ベースパス設定
   - `docker run --rm -p 8080:8080 -e KARING_BASE_PATH=/myapp ghcr.io/recelsus/karing:latest`
-

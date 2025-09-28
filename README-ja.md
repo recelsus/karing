@@ -55,14 +55,14 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 - `PUT /?id=` — 全置換
 - `PATCH /?id=` — 部分更新
 - `DELETE /?id=` — 論理削除
-- `POST /restore?id=` — 最新スナップショットへ復元
 - `GET /health` — サービス情報
 - `GET|POST /search` — 一覧/検索（JSON）
   - パラメータ無し: 最新から `limit` 件（既定は runtime_limit）
-  - `limit`, `offset`
+  - `limit`
   - `q` — FTS5 クエリ（テキスト: content、ファイル: filename）
   - `type` — `text` | `file`（省略時は混在）
-  - 返却: `{ success: true, message: "OK", data: [...], meta: { count, limit, offset, total? } }`
+  - 返却: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
+  - 認可: `GET /search` は read で許可。`POST /search` も read として扱います（write 権限は不要）。
 
 備考
 - ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/restore`、`<base_path>/search` でも到達可能。

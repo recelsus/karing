@@ -13,8 +13,6 @@ void create_karing_table_and_indexes(const drogon::orm::DbClientPtr& client) {
       "  content_blob BLOB,\n"
       "  created_at   INTEGER,\n"
       "  updated_at   INTEGER,\n"
-      "  client_ip    TEXT,\n"
-      "  api_key_id   INTEGER,\n"
       "  revision     INTEGER NOT NULL DEFAULT 0,\n"
       "  is_active    INTEGER NOT NULL DEFAULT 0,\n"
       "  CHECK (is_active IN (0,1)),\n"
@@ -24,9 +22,7 @@ void create_karing_table_and_indexes(const drogon::orm::DbClientPtr& client) {
       "      OR\n"
       "      (is_file = 1 AND content_blob IS NOT NULL AND content IS NULL AND filename IS NOT NULL AND mime IS NOT NULL)\n"
       "    )\n"
-      "  ),\n"
-      "  FOREIGN KEY (api_key_id) REFERENCES api_keys(id)\n"
-      "    ON UPDATE CASCADE ON DELETE SET NULL\n"
+      "  )\n"
       ");");
 
   client->execSqlSync("CREATE INDEX IF NOT EXISTS idx_karing_created_at_desc ON karing(created_at DESC, id DESC);");
