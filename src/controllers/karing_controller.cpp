@@ -44,7 +44,6 @@ Json::Value record_to_json(const dao::KaringRecord& r) {
   Json::Value j;
   j["id"] = r.id;
   j["is_file"] = r.is_file;
-  if (!r.key.empty()) j["key"] = r.key;
   if (!r.is_file) {
     if (!r.content.empty()) j["content"] = r.content;
   } else {
@@ -60,7 +59,52 @@ Json::Value record_to_json(const dao::KaringRecord& r) {
 void karing_controller::get_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
   dao::KaringDao dao(options::db_path());
   auto params = req->getParameters();
-  // id=... (single) or id+as=download handled first
+  bool want_json = (params.find("json") != params.end() && params.at("json") == "true");
+
+  // JSON mode: return JSON for latest or specific id
+  if (want_json) {
+    if (params.find("id") != params.end()) {
+      int id = std::stoi(params.at("id"));
+      auto rec = dao.get_by_id(id);
+      if (!rec) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
+      Json::Value data = Json::arrayValue; data.append(record_to_json(*rec));
+      return cb(karing::http::ok(data));
+    } else {
+      auto lid = dao.latest_id();
+      if (!lid) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "No content"));
+      auto rec = dao.get_by_id(*lid);
+      if (!rec) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
+      Json::Value data = Json::arrayValue; data.append(record_to_json(*rec));
+      return cb(karing::http::ok(data));
+    }
+  }
+  // Raw latest response when no query params: text/plain for text, or file bytes inline
+  if (params.empty()) {
+    auto lid = dao.latest_id();
+    if (!lid) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "No content"));
+    auto rec = dao.get_by_id(*lid);
+    if (!rec) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
+    if (!rec->is_file) {
+      auto resp = drogon::HttpResponse::newHttpResponse();
+      resp->setStatusCode(HttpStatusCode::k200OK);
+      resp->setContentTypeCode(drogon::CT_TEXT_PLAIN);
+      resp->addHeader("Content-Type", "text/plain; charset=utf-8");
+      resp->setBody(rec->content);
+      return cb(resp);
+    } else {
+      std::string mime, filename, data;
+      if (!dao.get_file_blob(rec->id, mime, filename, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "File not found"));
+      auto resp = drogon::HttpResponse::newHttpResponse();
+      resp->setStatusCode(HttpStatusCode::k200OK);
+      resp->setContentTypeCode(drogon::CT_CUSTOM);
+      resp->setContentTypeString(mime);
+      // inline; do not force attachment
+      resp->addHeader("Content-Disposition", std::string("inline; filename=\"") + filename + "\"");
+      resp->setBody(std::move(data));
+      return cb(resp);
+    }
+  }
+  // id=... (single) handled first; default is inline, 'as=download' forces attachment
   if (params.find("id") != params.end()) {
     int id = std::stoi(params.at("id"));
     if (params.find("as") != params.end() && params.at("as") == "download") {
@@ -76,88 +120,66 @@ void karing_controller::get_karing(const HttpRequestPtr& req, std::function<void
     }
     auto rec = dao.get_by_id(id);
     if (!rec) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
-    Json::Value data = Json::arrayValue; data.append(record_to_json(*rec));
-    return cb(karing::http::ok(data));
-  }
-  // search q=... (FTS on text)
-  bool hasLimit = params.find("limit") != params.end();
-  int offset = 0;
-  if (params.find("offset") != params.end()) {
-    try { offset = std::max(0, std::stoi(params.at("offset"))); } catch (...) { offset = 0; }
-  }
-  // Cursor takes precedence over offset if present
-  std::optional<karing::cursor::Cursor> cur;
-  if (params.find("cursor") != params.end() && !params.at("cursor").empty()) {
-    cur = karing::cursor::parse(params.at("cursor"));
-  }
-  int lim = 1; // default for non-search path: single latest
-  if (hasLimit) {
-    int ql = std::max(1, std::stoi(params.at("limit")));
-    lim = std::min(ql, options::runtime_limit());
-  }
-  if (params.find("q") != params.end() && !params.at("q").empty()) {
-    // For search, if limit is not specified, default to runtime limit
-    if (!hasLimit) lim = options::runtime_limit();
-    auto qb = karing::search::build_fts_query(params.at("q"));
-    if (qb.err) {
-      Json::Value det; det["reason"] = *qb.err;
-      return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid search query", det));
+    if (!rec->is_file) {
+      auto resp = drogon::HttpResponse::newHttpResponse();
+      resp->setStatusCode(HttpStatusCode::k200OK);
+      resp->setContentTypeCode(drogon::CT_TEXT_PLAIN);
+      resp->addHeader("Content-Type", "text/plain; charset=utf-8");
+      resp->setBody(rec->content);
+      return cb(resp);
+    } else {
+      std::string mime, filename, data;
+      if (!dao.get_file_blob(rec->id, mime, filename, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "File not found"));
+      auto resp = drogon::HttpResponse::newHttpResponse();
+      resp->setStatusCode(HttpStatusCode::k200OK);
+      resp->setContentTypeCode(drogon::CT_CUSTOM);
+      resp->setContentTypeString(mime);
+      resp->addHeader("Content-Disposition", std::string("inline; filename=\"") + filename + "\"");
+      resp->setBody(std::move(data));
+      return cb(resp);
     }
-    std::vector<dao::KaringRecord> list;
-    if (cur) {
-      if (!dao.try_search_fts_after(qb.fts, lim, cur->created_at, cur->id, list)) {
-        list = dao.search_text_like_after(params.at("q"), lim, cur->created_at, cur->id);
-      }
-    } else if (!dao.try_search_fts(qb.fts, lim, offset, list)) {
-      // fallback to LIKE for environments without proper FTS behaviour
-      list = dao.search_text_like(params.at("q"), lim, offset);
-    }
-    Json::Value data = Json::arrayValue; for (auto& r : list) data.append(record_to_json(r));
-    Json::Value meta; meta["count"] = (int)list.size(); meta["limit"] = lim; meta["offset"] = offset; meta["has_more"] = (int)list.size() == lim;
-    if (cur) meta["cursor"] = params.at("cursor");
-    if (meta["has_more"].asBool()) {
-      const auto& last = list.back();
-      meta["next_cursor"] = karing::cursor::build(last.created_at, last.id);
-      meta["next_offset"] = offset + (int)list.size();
-    }
-    // total for search
-    long long total = 0;
-    if (!dao.count_search_fts(qb.fts, total)) total = dao.count_search_like(params.at("q"));
-    meta["total"] = Json::Int64(total);
-    return cb(karing::http::ok(data, meta));
   }
-  // default: latest (single by default)
-  // Apply simple filters when no search term
-  dao::KaringDao::Filters filt;
-  filt.include_inactive = (params.find("all") != params.end() && params.at("all") == "true");
-  if (auto it = params.find("key"); it != params.end() && !it->second.empty()) filt.key = it->second;
-  if (auto it = params.find("is_file"); it != params.end()) {
-    if (it->second == "true") filt.is_file = 1; else if (it->second == "false") filt.is_file = 0;
-  }
-  if (auto it = params.find("mime"); it != params.end() && !it->second.empty()) filt.mime = it->second;
-  if (auto it = params.find("filename"); it != params.end() && !it->second.empty()) filt.filename = it->second;
-  if (auto it = params.find("order"); it != params.end()) filt.order_desc = !(it->second == "asc");
+  // No other parameters supported on root path (search moved to /search)
+  return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Unsupported query on root path"));
+}
+
+void karing_controller::search(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
+  dao::KaringDao dao(options::db_path());
+  auto params = req->getParameters();
+  // POST JSON body support
+  Json::Value body; if (req->method()==drogon::Post && req->getHeader("content-type").find("application/json")!=std::string::npos) { if (auto j=req->getJsonObject()) body=*j; }
+  auto get_str = [&](const char* k)->std::string{ if (body.isMember(k) && body[k].isString()) return body[k].asString(); auto it=params.find(k); return it!=params.end()? it->second : std::string(); };
+  auto get_int = [&](const char* k, int def)->int{ if (body.isMember(k) && body[k].isInt()) return body[k].asInt(); auto it=params.find(k); if (it!=params.end()) { try { return std::stoi(it->second);} catch(...){} } return def; };
+
+  int offset = std::max(0, get_int("offset", 0));
+  int lim = get_int("limit", options::runtime_limit()); lim = std::min(std::max(1, lim), options::runtime_limit());
+  std::string q = get_str("q");
+  std::optional<int> is_file; std::string ty=get_str("type"); if (ty=="text") is_file=0; else if (ty=="file") is_file=1;
 
   std::vector<dao::KaringRecord> list;
-  if (cur) {
-    // cursor paging applies only for the default listing (without filters) for now
-    list = dao.list_latest_after(lim, cur->created_at, cur->id);
-  } else if (filt.key || filt.is_file || filt.mime || filt.filename || filt.include_inactive || !filt.order_desc) {
-    list = dao.list_filtered(lim, offset, filt);
+  Json::Value meta(Json::objectValue);
+  if (!q.empty()) {
+    auto qb = karing::search::build_fts_query(q);
+    if (qb.err) { Json::Value det; det["reason"] = *qb.err; return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid search query", det)); }
+    // FTS only
+    bool ok=false;
+    if (is_file.has_value()) {
+      // in-memory filter for type
+      std::vector<dao::KaringRecord> tmp; ok = dao.try_search_fts(qb.fts, lim+offset, 0, tmp);
+      for (auto& r : tmp) if ((int)r.is_file == *is_file) list.push_back(std::move(r));
+      if (offset < (int)list.size()) { int end = std::min((int)list.size(), offset+lim); std::vector<dao::KaringRecord> sliced(list.begin()+offset, list.begin()+end); list.swap(sliced); } else list.clear();
+    } else {
+      ok = dao.try_search_fts(qb.fts, lim, offset, list);
+    }
+    if (!ok) return cb(karing::http::error(HttpStatusCode::k503ServiceUnavailable, "E_FTS_UNAVAILABLE", "Full-text search unavailable"));
+    meta["count"]=(int)list.size(); meta["limit"]=lim; meta["offset"]=offset;
   } else {
-    list = dao.list_latest(lim, offset);
+    // Latest listing
+    if (is_file.has_value()) { dao::KaringDao::Filters f; f.is_file=*is_file; f.order_desc=true; list=dao.list_filtered(lim, offset, f); meta["total"]=(Json::Int64)dao.count_filtered(f); }
+    else { list = dao.list_latest(lim, offset); meta["total"]=(Json::Int64)dao.count_active(); }
+    meta["count"]=(int)list.size(); meta["limit"]=lim; meta["offset"]=offset;
   }
   Json::Value data = Json::arrayValue; for (auto& r : list) data.append(record_to_json(r));
-  Json::Value meta; meta["count"] = (int)list.size(); meta["limit"] = lim; meta["offset"] = offset; meta["has_more"] = (int)list.size() == lim;
-  if (cur) meta["cursor"] = params.count("cursor") ? params.at("cursor") : "";
-  if (meta["has_more"].asBool()) {
-    const auto& last = list.back();
-    meta["next_cursor"] = karing::cursor::build(last.created_at, last.id);
-    meta["next_offset"] = offset + (int)list.size();
-  }
-  meta["total"] = (Json::Int64)(filt.key || filt.is_file || filt.mime || filt.filename || filt.include_inactive || !filt.order_desc
-    ? dao.count_filtered(filt)
-    : dao.count_active());
   return cb(karing::http::ok(data, meta));
 }
 
@@ -174,9 +196,7 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
     if ((long long)content.size() > (long long)maxText) {
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
-    std::string syntax = (*json)["syntax"].isString() ? (*json)["syntax"].asString() : "";
-    std::string key = (*json)["key"].isString() ? (*json)["key"].asString() : "";
-    int id = dao.insert_text(content, syntax, key, client_ip, std::nullopt);
+    int id = dao.insert_text(content, client_ip, std::nullopt);
     if (id < 0) return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Insert failed"));
     return cb(karing::http::created(id));
   }
@@ -196,7 +216,6 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
     }
     std::string filenameParam = req->getParameter("filename");
     if (filenameParam.empty()) filenameParam = f.getFileName();
-    std::string key = req->getParameter("key");
 
     // Read file bytes
     std::string data(f.fileData(), f.fileLength());
@@ -205,7 +224,7 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
     }
 
-    int id = dao.insert_file(filenameParam, mime, data, key, client_ip, std::nullopt);
+    int id = dao.insert_file(filenameParam, mime, data, client_ip, std::nullopt);
     if (id < 0) return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Insert failed"));
     return cb(karing::http::created(id));
   }
@@ -226,8 +245,8 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
     std::string content = (*json)["content"].asString();
     const auto maxText = karing::options::max_text_bytes();
     if ((long long)content.size() > (long long)maxText) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
-    std::string syntax = (*json)["syntax"].isString() ? (*json)["syntax"].asString() : "";
-    if (!dao.update_text(id, content, syntax, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
+    // Ignore client-provided syntax; always treat as plain text
+    if (!dao.update_text(id, content, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     Json::Value d; d["id"] = id; return cb(karing::http::ok(d));
   }
   if (ctype.find("multipart/form-data") != std::string::npos) {
@@ -255,13 +274,13 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
   std::string client_ip = req->getPeerAddr().toIp();
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject(); if (!json) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "JSON required"));
-    std::optional<std::string> content, syntax;
+    std::optional<std::string> content;
     if ((*json)["content"].isString()) {
       content = (*json)["content"].asString();
       if ((long long)content->size() > (long long)karing::options::max_text_bytes()) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
-    if ((*json)["syntax"].isString()) syntax = (*json)["syntax"].asString();
-    if (!dao.patch_text(id, content, syntax, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
+    // Ignore syntax field
+    if (!dao.patch_text(id, content, client_ip, std::nullopt)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
     Json::Value dd; dd["id"] = id; return cb(karing::http::ok(dd));
   }
   if (ctype.find("multipart/form-data") != std::string::npos) {

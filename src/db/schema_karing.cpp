@@ -6,9 +6,7 @@ void create_karing_table_and_indexes(const drogon::orm::DbClientPtr& client) {
   client->execSqlSync(
       "CREATE TABLE IF NOT EXISTS karing (\n"
       "  id           INTEGER PRIMARY KEY,\n"
-      "  key          TEXT UNIQUE,\n"
       "  content      TEXT,\n"
-      "  syntax       TEXT,\n"
       "  is_file      INTEGER NOT NULL DEFAULT 0,\n"
       "  filename     TEXT,\n"
       "  mime         TEXT,\n"
@@ -32,11 +30,9 @@ void create_karing_table_and_indexes(const drogon::orm::DbClientPtr& client) {
       ");");
 
   client->execSqlSync("CREATE INDEX IF NOT EXISTS idx_karing_created_at_desc ON karing(created_at DESC, id DESC);");
-  client->execSqlSync("CREATE INDEX IF NOT EXISTS idx_karing_key             ON karing(key);");
   client->execSqlSync("CREATE INDEX IF NOT EXISTS idx_karing_is_file_created ON karing(is_file, created_at DESC, id DESC);");
   client->execSqlSync("CREATE INDEX IF NOT EXISTS idx_karing_filename        ON karing(filename);");
   client->execSqlSync("CREATE INDEX IF NOT EXISTS idx_karing_mime            ON karing(mime);");
 }
 
 }
-

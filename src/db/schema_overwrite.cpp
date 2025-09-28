@@ -33,7 +33,6 @@ void create_overwrite_log_table(const drogon::orm::DbClientPtr& client) {
   try { client->execSqlSync("ALTER TABLE overwrite_log ADD COLUMN filename_before TEXT;"); } catch (...) {}
   try { client->execSqlSync("ALTER TABLE overwrite_log ADD COLUMN filename_after TEXT;"); } catch (...) {}
   try { client->execSqlSync("ALTER TABLE overwrite_log ADD COLUMN content_before TEXT;"); } catch (...) {}
-  try { client->execSqlSync("ALTER TABLE overwrite_log ADD COLUMN syntax_before TEXT;"); } catch (...) {}
   try { client->execSqlSync("ALTER TABLE overwrite_log ADD COLUMN text_patch TEXT;"); } catch (...) {}
 }
 

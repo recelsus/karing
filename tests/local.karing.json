@@ -1,15 +1,13 @@
 {
   "app": {
     "name": "karing",
-    "threads": 0
+    "threads": 1
   },
   "listeners": [
     {
       "address": "0.0.0.0",
       "port": 8080,
-      "https": false,
-      "cert": "server.crt",
-      "key": "server.key"
+      "https": false
     }
   ],
   "log": {
@@ -22,11 +20,6 @@
     "max_file_bytes": 20971520,
     "max_text_bytes": 10485760
   },
-  "db_clients": [
-    {
-      "name": "default",
-      "rdbms": "sqlite3",
-      "filename": "./karing.db"
-    }
-  ]
+  "db_clients": []
 }
+

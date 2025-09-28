@@ -275,6 +275,20 @@ int main(int argc, char* argv[]) {
       limitValue = cfg["karing"]["limit"].asInt();
     }
   } catch (...) {}
+  // Fallback: robust parse from the loaded config file if customConfig did not expose the value
+  if (limitValue == 100) {
+    try {
+      std::ifstream ifs(configAbs.string());
+      if (ifs) {
+        Json::CharReaderBuilder b; Json::Value root; std::string errs;
+        if (Json::parseFromStream(b, ifs, &root, &errs)) {
+          if (root.isMember("karing") && root["karing"].isMember("limit") && root["karing"]["limit"].isInt()) {
+            limitValue = root["karing"]["limit"].asInt();
+          }
+        }
+      }
+    } catch (...) {}
+  }
   if (limitOverride > 0) limitValue = limitOverride;
   if (limitValue > KARING_BUILD_LIMIT) {
     LOG_WARN << "limit " << limitValue << " exceeds build limit " << KARING_BUILD_LIMIT << "; clamping.";
@@ -286,13 +300,7 @@ int main(int argc, char* argv[]) {
   // Initialize schema directly via SQLite C API to avoid Drogon DB config conflicts
   karing::db::init_sqlite_schema_file(resolvedDb);
 
-  // Preallocate slots according to limit
-  try {
-    karing::dao::KaringDao dao(resolvedDb);
-    dao.preallocate_slots(limitValue);
-  } catch (...) {
-    LOG_WARN << "preallocate_slots failed";
-  }
+  // Slot preallocation removed; overwrite-on-limit policy is used.
 
   // Determine effective max file size (bytes): config -> override, clamp to 20 MiB
   const long long HARD_FILE_MAX = 20971520LL; // 20 MiB

@@ -7,7 +7,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 - C++17（Drogon）
 - SQLite（単一ファイル）
 - テキストとファイル（画像/音声）
-- FTS 検索（環境により LIKE フォールバック）
+- FTS5 検索（テキスト本文とファイル名を対象）
 - API キー認証 + IP allow/deny
 - ベースパスでサブパス公開
 - TLS はリバースプロキシ or アプリで
@@ -47,20 +47,40 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - 既定 DB: `%LOCALAPPDATA%\karing\karing.db`
 - 環境変数が設定を上書き可能（`KARING_BASE_PATH`, `KARING_LIMIT` など）。詳細は `docs/config-ja.md`。
 
-エンドポイント（ルート）
------------------------
+エンドポイント
+--------------
 
-- `GET /` — 一覧/検索/最新、`id=` 指定で単体取得
-- `POST /` — 作成（JSON or multipart）; `201 { id }`
+- `GET /` — 最新1件をRAWで返却（テキスト: text/plain、ファイル: inline）。`id=` 指定でそのIDをRAW。`json=true` でJSON返却。
+- `POST /` — 作成（JSON `{ content }` または multipart）。201 で `{ success: true, message: "Created", id }` を返却。
 - `PUT /?id=` — 全置換
 - `PATCH /?id=` — 部分更新
 - `DELETE /?id=` — 論理削除
 - `POST /restore?id=` — 最新スナップショットへ復元
 - `GET /health` — サービス情報
+- `GET|POST /search` — 一覧/検索（JSON）
+  - パラメータ無し: 最新から `limit` 件（既定は runtime_limit）
+  - `limit`, `offset`
+  - `q` — FTS5 クエリ（テキスト: content、ファイル: filename）
+  - `type` — `text` | `file`（省略時は混在）
+  - 返却: `{ success: true, message: "OK", data: [...], meta: { count, limit, offset, total? } }`
 
 備考
-- ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/restore` でも到達可能。
+- ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/restore`、`<base_path>/search` でも到達可能。
 - 認証は `X-API-Key` / `?api_key=`（ロール: read/write）。`docs/config-ja.md` を参照。
+
+レスポンス形式
+--------------
+
+- 成功: `{ success: true, message: "OK" | "Created", ... }`
+- 失敗: `{ success: false, code, message, details? }`
+
+検索とFTS
+--------
+
+- SQLite の FTS5 仮想テーブル `karing_fts` を使用（カラム: テキストは `content`、ファイルは `filename`）。
+- `/search` は GET クエリまたは POST JSON で同じフィールド（q/limit/offset/type）を受け取ります。
+- `KARING_DISABLE_FTS=1` を設定すると FTS を無効化（`q` 付き `/search` は 503）。`q` 無しの最新一覧は動作します。
+- 前方一致の強化: `KARING_FTS_PREFIX` に `"2 3"` のような値を設定すると、2文字/3文字のプレフィックス索引を有効化できます（例: `hel*` のような先頭一致が高速化）。
 
 インストール（make install）
 ----------------------------
@@ -79,7 +99,7 @@ cmake --install build --prefix /usr/local
 - バイナリ: Release（タグ v*）に添付 / Actions の Artifacts から取得可能
   - ファイル名: `karing-ubuntu`（Linux）, `karing-macos`（macOS）
 - Docker: GHCR `ghcr.io/recelsus/karing`（branch/sha/semver タグ）
-  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`
+  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
 
 ドキュメント
 ------------

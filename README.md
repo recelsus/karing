@@ -6,7 +6,7 @@ Karing is a lightweight pastebin-like API service built on Drogon. It stores sho
 - Fast C++17 server (Drogon)
 - SQLite persistence (single file)
 - Text and file blobs (images/audio)
-- Full‑text search with graceful fallback
+- Full‑text search (FTS5) over text and filenames
 - API key auth + IP allow/deny
 - Base path for reverse proxy subpaths
 - TLS via reverse proxy or app flags
@@ -51,20 +51,40 @@ Configuration
 - Environment variables override config (e.g., `KARING_BASE_PATH`, `KARING_LIMIT`, etc.)
 - Details: see `docs/config.md`.
 
-Endpoints (root paths)
+Endpoints
 ----------------------
 
-- `GET /` — list/search/latest or single by `id=`; supports `limit`, `offset`, `cursor`, filters, and `q=` full‑text
-- `POST /` — create text (JSON) or file (multipart); returns `201 { id }`
+- `GET /` — raw latest (text/plain or inline file). With `id=`, returns that item inline. Add `json=true` to return JSON instead.
+- `POST /` — create text (JSON `{ content }`) or file (multipart); returns `{ success: true, message: "Created", id }` with 201.
 - `PUT /?id=` — replace
 - `PATCH /?id=` — partial update
 - `DELETE /?id=` — logical delete
 - `POST /restore?id=` — restore latest snapshot
 - `GET /health` — service/build/limits/TLS/base_path
+- `GET|POST /search` — list/search API (JSON only)
+  - No params: latest items up to `limit` (default: runtime limit)
+  - `limit`, `offset`
+  - `q` — FTS5 query (text: content, file: filename)
+  - `type` — `text` | `file` (optional filter)
+  - Response: `{ success: true, message: "OK", data: [...], meta: { count, limit, offset, total? } }`
 
 Notes
-- Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/restore`.
+- Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/restore`, `/myapp/search`.
 - Auth: API key via `X-API-Key` or `?api_key=`, role‑based (read/write). See `docs/config.md`.
+
+Response format
+---------------
+
+- Success: `{ success: true, message: "OK" | "Created", ... }`
+- Error: `{ success: false, code, message, details? }`
+
+Search and FTS
+--------------
+
+- Uses SQLite FTS5 virtual table `karing_fts` with columns: `content` (text), `filename` (file).
+- `/search` accepts GET query or POST JSON with the same fields.
+- Disable FTS via `KARING_DISABLE_FTS=1` (then `/search` with `q` returns 503). Latest listing without `q` still works.
+- Prefix matching: you can enable FTS prefix indexing by setting `KARING_FTS_PREFIX`, e.g. `KARING_FTS_PREFIX="2 3"` to index 2‑ and 3‑character prefixes. This improves leading‑substring matches like `hel*`.
 
 Install (make install)
 ----------------------
@@ -86,7 +106,7 @@ Binaries and Docker
   - Filenames: `karing-ubuntu` (Linux), `karing-macos` (macOS).
 - Docker
   - Published to GHCR by CI: `ghcr.io/recelsus/karing` with tags for branch/sha/semver.
-  - Container respects env vars: `KARING_CONFIG`, `KARING_DATA`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`.
+  - Container respects env vars: `KARING_CONFIG`, `KARING_DATA`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`.
 
 Docs
 ----

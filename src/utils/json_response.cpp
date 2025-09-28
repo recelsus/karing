@@ -8,16 +8,17 @@ using drogon::HttpStatusCode;
 
 HttpResponsePtr ok(Json::Value data, Json::Value meta) {
   Json::Value root;
+  root["success"] = true;
+  root["message"] = "OK";
   root["data"] = std::move(data);
   if (!meta.isNull()) root["meta"] = std::move(meta);
-  root["error"] = Json::nullValue;
   auto resp = HttpResponse::newHttpJsonResponse(root);
   resp->setStatusCode(HttpStatusCode::k200OK);
   return resp;
 }
 
 HttpResponsePtr created(int id) {
-  Json::Value root; root["id"] = id; root["error"] = Json::nullValue;
+  Json::Value root; root["success"] = true; root["message"] = "Created"; root["id"] = id;
   auto resp = HttpResponse::newHttpJsonResponse(root);
   resp->setStatusCode(HttpStatusCode::k201Created);
   return resp;
@@ -28,15 +29,13 @@ HttpResponsePtr error(HttpStatusCode status,
                       const std::string& message,
                       Json::Value details) {
   Json::Value root;
-  Json::Value err;
-  err["code"] = code;
-  err["message"] = message;
-  if (!details.isNull()) err["details"] = std::move(details);
-  root["error"] = std::move(err);
+  root["success"] = false;
+  root["code"] = code;
+  root["message"] = message;
+  if (!details.isNull()) root["details"] = std::move(details);
   auto resp = HttpResponse::newHttpJsonResponse(root);
   resp->setStatusCode(status);
   return resp;
 }
 
 }
-

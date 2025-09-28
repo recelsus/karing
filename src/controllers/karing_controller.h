@@ -13,6 +13,9 @@ class karing_controller : public drogon::HttpController<karing_controller> {
   ADD_METHOD_TO(karing_controller::patch_karing, "/", drogon::Patch, "karing::filters::https_redirect_filter", "karing::filters::hsts_filter", "karing::filters::auth_filter");
   ADD_METHOD_TO(karing_controller::delete_karing, "/", drogon::Delete, "karing::filters::https_redirect_filter", "karing::filters::hsts_filter", "karing::filters::auth_filter");
   ADD_METHOD_TO(karing_controller::restore_karing, "/restore", drogon::Post, "karing::filters::https_redirect_filter", "karing::filters::hsts_filter", "karing::filters::auth_filter");
+  // Search endpoint (GET/POST JSON)
+  ADD_METHOD_TO(karing_controller::search, "/search", drogon::Get, "karing::filters::https_redirect_filter", "karing::filters::hsts_filter", "karing::filters::auth_filter");
+  ADD_METHOD_TO(karing_controller::search, "/search", drogon::Post, "karing::filters::https_redirect_filter", "karing::filters::hsts_filter", "karing::filters::auth_filter");
   METHOD_LIST_END
 
   void get_karing(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& cb);
@@ -22,6 +25,7 @@ class karing_controller : public drogon::HttpController<karing_controller> {
   void delete_karing(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& cb);
   void restore_karing(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& cb);
   void health(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& cb);
+  void search(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& cb);
 };
 
 }
