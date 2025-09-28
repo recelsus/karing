@@ -16,7 +16,7 @@ services:
       # KARING_MAX_FILE_BYTES: "20971520"
       # KARING_MAX_TEXT_BYTES: "10485760"
       # KARING_TRUSTED_PROXY: "1"     # trust proxy headers / プロキシヘッダを信頼
-      # KARING_NO_AUTH: "1"           # dev only (disable auth) / 開発用途のみ（認証無効）
+      KARING_NO_AUTH: "1"           # dev only (disable auth) / 開発用途のみ（認証無効）
     volumes:
       - karing-data:/var/lib/karing   # data dir / データ
       - karing-logs:/var/log/karing   # logs dir / ログ

@@ -1,0 +1,40 @@
+# Karing サンプルコマンド集 (localhost:8080)
+# サーバ起動後に実行してください。API キー運用時は KEY を設定します。
+
+# API キー（必要に応じて置換）
+KEY="YOUR_KEY"
+
+# ヘルスチェック
+curl -sS 'http://localhost:8080/health'
+
+# --- 挿入: テキストを作成（POST /、application/json）---
+curl -sS -X POST 'http://localhost:8080/' \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: ${KEY}" \
+  -d '{"content":"hello world","syntax":"markdown","key":"note"}'
+
+# ID 取得込み（jq 利用）
+ID=$(curl -sS -X POST 'http://localhost:8080/' \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: ${KEY}" \
+  -d '{"content":"v1 text"}' | jq -r '.id')
+echo "created id=${ID}"
+
+# --- 挿入: ファイルを作成（POST /、multipart/form-data）---
+# 受理される MIME は image/* または audio/*
+curl -sS -X POST 'http://localhost:8080/' \
+  -H "X-API-Key: ${KEY}" \
+  -F 'file=@./sample.png' \
+  -F 'mime=image/png' \
+  -F 'filename=sample.png' \
+  -F 'key=screenshot'
+
+# --- 確認: 単体取得（GET /?id=）---
+curl -sS "http://localhost:8080/?id=${ID}" -H "X-API-Key: ${KEY}"
+
+# --- 復元: 直近のテキストスナップショットへ戻す（POST /restore?id=）---
+curl -sS -X POST "http://localhost:8080/restore?id=${ID}" -H "X-API-Key: ${KEY}"
+
+# 参考: 認証を無効化して起動（開発用途）
+# KARING_NO_AUTH=1 KARING_ALLOW_LOCALHOST=1 ./build/karing
+

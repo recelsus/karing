@@ -51,6 +51,19 @@ int KaringDao::insert_text(const std::string& content,
   int target_id = -1;
   sqlite3_stmt* stmt = nullptr;
   bool overwrote = false;
+  // If a key is provided, try to reuse the existing row with the same key first (upsert‑like behaviour)
+  // This prevents UNIQUE constraint failures when clients post with the same key repeatedly.
+  if (!key.empty()) {
+    sqlite3_stmt* ks = nullptr;
+    if (sqlite3_prepare_v2(db, "SELECT id FROM karing WHERE key=? LIMIT 1;", -1, &ks, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(ks, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+      if (sqlite3_step(ks) == SQLITE_ROW) {
+        target_id = sqlite3_column_int(ks, 0);
+        overwrote = true;
+      }
+    }
+    if (ks) sqlite3_finalize(ks);
+  }
   // pick an inactive slot first
   if (sqlite3_prepare_v2(db, "SELECT id FROM karing WHERE is_active=0 ORDER BY id LIMIT 1;", -1, &stmt, nullptr) == SQLITE_OK) {
     if (sqlite3_step(stmt) == SQLITE_ROW) target_id = sqlite3_column_int(stmt, 0);
@@ -328,6 +341,19 @@ int KaringDao::insert_file(const std::string& filename,
   int target_id = -1;
   sqlite3_stmt* stmt = nullptr;
   bool overwrote = false;
+  // If a key is provided, try to reuse the existing row with the same key first (upsert‑like behaviour)
+  // This prevents UNIQUE constraint failures when clients post with the same key repeatedly.
+  if (!key.empty()) {
+    sqlite3_stmt* ks = nullptr;
+    if (sqlite3_prepare_v2(db, "SELECT id FROM karing WHERE key=? LIMIT 1;", -1, &ks, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(ks, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+      if (sqlite3_step(ks) == SQLITE_ROW) {
+        target_id = sqlite3_column_int(ks, 0);
+        overwrote = true;
+      }
+    }
+    if (ks) sqlite3_finalize(ks);
+  }
   if (sqlite3_prepare_v2(db, "SELECT id FROM karing WHERE is_active=0 ORDER BY id LIMIT 1;", -1, &stmt, nullptr) == SQLITE_OK) {
     if (sqlite3_step(stmt) == SQLITE_ROW) target_id = sqlite3_column_int(stmt, 0);
   }
