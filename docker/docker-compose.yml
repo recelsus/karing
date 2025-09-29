@@ -1,7 +1,7 @@
 services:
   karing:
     image: ghcr.io/recelsus/karing:latest
-    # Build locally instead of pulling from GHCR (uncomment below) / GHCR から取得せずローカルでビルドする場合は下記を有効化
+    # Build locally instead of pulling from GHCR (uncomment below)
     # build:
     #   context: ..
     #   dockerfile: docker/Dockerfile
@@ -10,16 +10,18 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Override as needed; uncomment examples below / 必要に応じて上書き（例をコメント解除）
+      # Defaults are baked in the image; override with -e or here.
+      KARING_DATA: "/var/lib/karing/karing.db"     # DB file path
+      KARING_LOG_PATH: "/var/log/karing"           # Logs directory
       # KARING_BASE_PATH: /myapp
       # KARING_LIMIT: "100"
       # KARING_MAX_FILE_BYTES: "20971520"
       # KARING_MAX_TEXT_BYTES: "10485760"
-      # KARING_TRUSTED_PROXY: "1"     # trust proxy headers / プロキシヘッダを信頼
-      KARING_NO_AUTH: "1"           # dev only (disable auth) / 開発用途のみ（認証無効）
+      # KARING_TRUSTED_PROXY: "1"                  # trust proxy headers
+      # KARING_NO_AUTH: "1"                        # dev only (disable auth)
     volumes:
-      - karing-data:/var/lib/karing   # data dir / データ
-      - karing-logs:/var/log/karing   # logs dir / ログ
+      - karing-data:/var/lib/karing   # data dir
+      - karing-logs:/var/log/karing   # logs dir
 
 volumes:
   karing-data:

@@ -1,4 +1,5 @@
 #include "embedded_config.h"
+#include "embedded_user_json.h"
 
 namespace karing::config {
 
@@ -6,7 +7,8 @@ static std::string build_with_port(int port) {
   return std::string(R"JSON({
   "app": {
     "name": "karing",
-    "threads": 0
+    "threads": 0,
+    "require_tls": false
   },
   "listeners": [
     {
@@ -23,13 +25,20 @@ static std::string build_with_port(int port) {
   "karing": {
     "limit": 100,
     "max_file_bytes": 20971520,
-    "max_text_bytes": 10485760
+    "max_text_bytes": 10485760,
+    "base_path": "/"
   },
   "db_clients": []
 })JSON");
 }
 
-static const std::string kEmbedded = build_with_port(8080);
+static std::string kEmbedded = [](){
+#if KARING_EMBED_HAVE_USER_JSON
+  return std::string(KARING_EMBED_USER_JSON);
+#else
+  return build_with_port(8080);
+#endif
+}();
 
 const std::string& drogon_default_json() { return kEmbedded; }
 std::string drogon_build_config_json(int port) { return build_with_port(port); }

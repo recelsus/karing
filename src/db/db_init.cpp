@@ -68,6 +68,19 @@ void init_sqlite_schema_file(const std::string& db_path_str) {
   exec("BEGIN;");
   exec("CREATE TABLE IF NOT EXISTS config (\n  name TEXT PRIMARY KEY,\n  value TEXT NOT NULL\n);");
   exec("CREATE TABLE IF NOT EXISTS api_keys (\n  id INTEGER PRIMARY KEY,\n  key TEXT NOT NULL UNIQUE,\n  label TEXT,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  last_used_at INTEGER,\n  last_ip TEXT\n);");
+  // Ensure role column exists for RBAC without noisy duplicate warnings
+  {
+    bool has_role = false;
+    auto cbcol = [](void* p, int argc, char** argv, char**)->int { *(bool*)p = (argc > 0); return 0; };
+    char* err_role = nullptr;
+    sqlite3_exec(db, "SELECT 1 FROM pragma_table_info('api_keys') WHERE name='role' LIMIT 1;", cbcol, &has_role, &err_role);
+    if (err_role) { sqlite3_free(err_role); err_role = nullptr; }
+    if (!has_role) {
+      exec("ALTER TABLE api_keys ADD COLUMN role TEXT NOT NULL DEFAULT 'write';");
+    }
+    // Backfill legacy rows where role stayed NULL
+    exec("UPDATE api_keys SET role='write' WHERE role IS NULL;");
+  }
   exec("CREATE TABLE IF NOT EXISTS ip_allow (\n  id INTEGER PRIMARY KEY,\n  cidr TEXT NOT NULL UNIQUE,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL\n);");
   exec("CREATE TABLE IF NOT EXISTS ip_deny (\n  id INTEGER PRIMARY KEY,\n  cidr TEXT NOT NULL UNIQUE,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL\n);");
   exec("CREATE TABLE IF NOT EXISTS karing (\n  id INTEGER PRIMARY KEY,\n  content TEXT,\n  is_file INTEGER NOT NULL DEFAULT 0,\n  filename TEXT,\n  mime TEXT,\n  content_blob BLOB,\n  created_at INTEGER,\n  updated_at INTEGER,\n  revision INTEGER NOT NULL DEFAULT 0,\n  is_active INTEGER NOT NULL DEFAULT 0,\n  CHECK (is_active IN (0,1)),\n  CHECK (\n    is_active = 0 OR (\n      (is_file = 0 AND content IS NOT NULL AND content_blob IS NULL)\n      OR\n      (is_file = 1 AND content_blob IS NOT NULL AND content IS NULL AND filename IS NOT NULL AND mime IS NOT NULL)\n    )\n  )\n);");

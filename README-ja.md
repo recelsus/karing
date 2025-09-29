@@ -46,6 +46,16 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - 設定: `%APPDATA%\karing\karing.json`
   - 既定 DB: `%LOCALAPPDATA%\karing\karing.db`
 - 環境変数が設定を上書き可能（`KARING_BASE_PATH`, `KARING_LIMIT` など）。詳細は `docs/config-ja.md`。
+- 優先度（実行時）: `--config` / `KARING_CONFIG` > ユーザー設定（`$XDG_CONFIG_HOME/karing/karing.json` または `~/.config/karing/karing.json`）> システム（`/etc/karing/karing.json`）> 同梱 `config/karing.json` > 組込みデフォルト。
+  - このアプリは特権（sudo）を要求しない前提のため、既定の設定場所は `/etc` ではなくユーザー設定（`~/.config/karing`）です。Docker イメージでは `/root/.config/karing/karing.json` に配置します。
+- 初回起動: ユーザー設定が未作成の場合、採用された設定をユーザー設定パスにコピーして永続化します。
+- 既定パス（XDG 準拠）:
+  - DB: `$XDG_DATA_HOME/karing/karing.db`（未設定時は `~/.local/share/karing/karing.db`）。
+  - ログ: `$XDG_STATE_HOME/karing/logs`（未設定時は `~/.local/state/karing/logs`）。
+  - 設定ファイル側で絶対パスを明示した場合は、その指定を優先します。
+ - 環境変数ショートカット:
+   - `KARING_DATA` は DB の絶対パスを指定（XDG/設定より優先）。
+   - `KARING_LOG_PATH` はログディレクトリを指定（XDG/設定より優先）。
 
 エンドポイント
 --------------
@@ -65,8 +75,65 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - 認可: `GET /search` は read で許可。`POST /search` も read として扱います（write 権限は不要）。
 
 備考
-- ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/restore`、`<base_path>/search` でも到達可能。
-- 認証は `X-API-Key` / `?api_key=`（ロール: read/write）。`docs/config-ja.md` を参照。
+- ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/search` でも到達可能。
+- 認証は `X-API-Key` / `?api_key=`（ロール: read/write/admin）。`docs/config-ja.md` を参照。
+
+認可ポリシー
+------------
+
+- 役割の序列: `read < write < admin`（右が上位）。
+- IPの優先:
+  - `deny` に一致 → 常に拒否（APIキーが正しくても拒否）。
+  - `allow` に一致 → 認証を開始せず許可（APIキーの有無/正否は不問）。
+  - どちらでもない → APIキーを要求（十分なロールが必要）。
+- エンドポイント毎の要件:
+  - `GET /`, `GET /health`, `GET/POST /search` → `read` 以上
+  - `POST /`, `PUT/PATCH/DELETE /` → `write` 以上
+  - `GET /admin/auth` → `admin`（ただし allow に一致する場合はIP優先で通過）
+
+管理CLI（APIキー / IP制御）
+--------------------------
+
+`karing` バイナリから APIキー と IP許可/拒否リストを操作できます。
+
+- APIキー
+  - `karing keys add --label "CI from repo A"`                   # APIキーを自動生成して追加。デフォルトrole=write、ラベルを付与
+  - `karing keys add --role admin --label "ops emergency"`       # 管理者権限(admin)のキーを自動生成して追加
+  - `karing keys add --disabled --label "staged key"`            # 生成だけして無効化状態で作成（ロールアウト前の準備）
+  - `karing keys set-role 42 admin`                               # 既存キー(id=42)のroleを書き換え：write/read→adminへ
+  - `karing keys set-label 42 "CI from repo B"`                   # 既存キー(id=42)のラベルを更新
+  - `karing keys disable 42`                                      # 既存キー(id=42)を無効化（enabled=0）※復活可能
+  - `karing keys enable 42`                                       # 無効化したキーを再度有効化（enabled=1）
+  - `karing keys rm 42`                                           # 既存キー(id=42)を削除（既定は論理削除でなく物理なら--hardを付ける）
+  - `karing keys rm 42 --hard`                                    # 既存キー(id=42)を物理削除（DBから完全に除去）
+  - `karing keys add --label "will show secret once" --json`      # 生成結果をJSONで受け取る（secretは初回のみ出力）
+    # → {"id":..., "role":"write","label":"...","enabled":1,"secret":"..."}
+
+- IP許可/拒否
+  - `karing ip add 203.0.113.0/24 allow`                          # 203.0.113.0/24 を許可リストに追加（CIDRそのまま保存）
+  - `karing ip add 203.0.113.10 deny`                             # 単一IPv4を拒否に追加
+  - `karing ip add 192.168.1.5/24 allow`                          # ホスト/プレフィクス形式 → ネットワークアドレス(192.168.1.0/24)に丸めて保存
+  - `karing ip rm allow:12`                                       # 許可テーブルの id=12 を削除（物理削除。論理運用したい場合は disable 推奨）
+  - `karing ip rm deny:7`                                         # 拒否テーブルの id=7 を削除
+  - `karing ip add 203.0.113.10/32 deny`                          # 既存の allow 203.0.113.0/24 と重なるが登録可
+    # （評価時は“最も具体的なプレフィクス”が優先され、この /32 の deny が勝つ）
+
+管理エンドポイント
+------------------
+
+- `GET /admin/auth`（admin）
+  - 現在の認証設定（APIキー一覧、IP許可/拒否リスト）を返却。
+  - レスポンス構造:
+    ```json
+    {
+      "api_keys": [
+        {"id":1,"key":"...","label":"...","enabled":true,"role":"write","created_at":...,"last_used_at":...,"last_ip":"..."}
+      ],
+      "ip_allow": [ {"id":12, "cidr":"203.0.113.0/24", "enabled":true, "created_at":...} ],
+      "ip_deny":  [ {"id":7,  "cidr":"203.0.113.10/32", "enabled":true, "created_at":...} ]
+    }
+    ```
+  - ここで表示される `id` を `karing ip rm allow:<id>` / `deny:<id>` で指定して削除できます。
 
 レスポンス形式
 --------------
@@ -99,7 +166,8 @@ cmake --install build --prefix /usr/local
 - バイナリ: Release（タグ v*）に添付 / Actions の Artifacts から取得可能
   - ファイル名: `karing-ubuntu`（Linux）, `karing-macos`（macOS）
 - Docker: GHCR `ghcr.io/recelsus/karing`（branch/sha/semver タグ）
-  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
+  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
+  - Dockerfile 既定: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing`（`-e` または compose の `environment:` で上書き可）
 
 ドキュメント
 ------------

@@ -21,6 +21,7 @@ add_executable(karing
   src/utils/embedded_config.cpp
   src/dao/karing_dao.cpp
   src/controllers/karing_controller.cpp
+  src/controllers/admin_controller.cpp
   src/controllers/root_controller.cpp
   src/controllers/health_controller.cpp
   src/utils/options.cpp
@@ -29,6 +30,7 @@ add_executable(karing
   src/utils/cursor.cpp
   src/utils/strings.cpp
   src/filters/auth_filter.cpp
+  src/filters/admin_filter.cpp
   src/filters/https_redirect_filter.cpp
   src/filters/hsts_filter.cpp
 )
@@ -52,6 +54,32 @@ add_compile_definitions(KARING_MAX_LIMIT=100)
 add_compile_definitions(KARING_BUILD_LIMIT=${KARING_BUILD_LIMIT})
 add_compile_definitions(KARING_CXX_STANDARD=${CMAKE_CXX_STANDARD})
 add_compile_definitions(KARING_BUILD_TYPE=\"${CMAKE_BUILD_TYPE}\")
+
+# Build-time embedded config (optional)
+set(KARING_EMBED_CONFIG_FILE "" CACHE FILEPATH "Path to JSON to embed as default config")
+set(GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${GENERATED_INCLUDE_DIR}")
+
+set(_HAVE_JSON 0)
+set(_EMBED_JSON_ESCAPED "")
+if (KARING_EMBED_CONFIG_FILE)
+  if (EXISTS "${KARING_EMBED_CONFIG_FILE}")
+    file(READ "${KARING_EMBED_CONFIG_FILE}" _RAW_JSON)
+    string(REPLACE "\\" "\\\\" _EMBED_JSON_ESCAPED "${_RAW_JSON}")
+    string(REPLACE "\"" "\\\"" _EMBED_JSON_ESCAPED "${_EMBED_JSON_ESCAPED}")
+    string(REPLACE "\n" "\\n" _EMBED_JSON_ESCAPED "${_EMBED_JSON_ESCAPED}")
+    set(_HAVE_JSON 1)
+  else()
+    message(WARNING "KARING_EMBED_CONFIG_FILE path does not exist: ${KARING_EMBED_CONFIG_FILE}")
+  endif()
+endif()
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/embedded_user_json.h.in
+  ${GENERATED_INCLUDE_DIR}/embedded_user_json.h
+  @ONLY
+)
+target_include_directories(karing PRIVATE ${GENERATED_INCLUDE_DIR})
 
 # Embed git revision and build time
 execute_process(

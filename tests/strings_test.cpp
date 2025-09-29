@@ -6,8 +6,8 @@ TEST_CASE("utf8_prefix respects codepoint boundaries", "[strings]") {
   // ASCII
   REQUIRE(utf8_prefix("hello", 5) == "hello");
   REQUIRE(utf8_prefix("hello", 3) == "hel");
-  // Multibyte: "あ" (3 bytes), "い" (3 bytes)
-  std::string s = "あい"; // 6 bytes
+  // Multibyte examples: U+3042 (3 bytes), U+3044 (3 bytes)
+  std::string s = "あい"; // 6 bytes total
   REQUIRE(utf8_prefix(s, 6) == s);
   REQUIRE(utf8_prefix(s, 5) == "あ"); // should not cut into second codepoint
   REQUIRE(utf8_prefix(s, 3) == "あ");
@@ -31,4 +31,3 @@ TEST_CASE("simple_diff shows +/- lines", "[strings]") {
   REQUIRE(d.find("+TWO") != std::string::npos);
   REQUIRE(d.find("+four") != std::string::npos);
 }
-

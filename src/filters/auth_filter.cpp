@@ -5,6 +5,7 @@
 #include <vector>
 #include <optional>
 #include "utils/options.h"
+#include "utils/json_response.h"
 
 using drogon::HttpRequestPtr;
 using drogon::HttpStatusCode;
@@ -60,6 +61,14 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
                            drogon::FilterChainCallback&& fccb) {
   if (karing::options::no_auth()) return fccb();
 
+  // Determine method class early to allow localhost read-only fast-path
+  auto method = req->getMethod();
+  bool write_method = !(method==drogon::Get || method==drogon::Head || method==drogon::Options);
+  if (method==drogon::Post) {
+    const auto& p = req->path();
+    if (p == "/search") write_method = false; // treat as read
+  }
+
   // Determine client IP with proxy chain handling
   std::string peer_ip = req->getPeerAddr().toIp();
   std::string client_ip = peer_ip;
@@ -79,27 +88,27 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
 
   // Open DB
   sqlite3* db=nullptr; if (sqlite3_open_v2(karing::options::db_path().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) {
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(HttpStatusCode::k500InternalServerError);
+    // Return explicit JSON error to aid debugging
+    auto resp = karing::http::error(HttpStatusCode::k500InternalServerError, "E_DB", "Database open failed");
     fcb(resp); if (db) sqlite3_close(db); return;
   }
 
-  // Localhost fast-path (optional)
+  // Localhost fast-path (optional): only for read methods
   if (karing::options::allow_localhost()) {
     bool is_loopback = (client_ip == "::1") || cidr_match("127.0.0.0/8", client_ip);
-    if (is_loopback) { if (db) sqlite3_close(db); return fccb(); }
+    if (is_loopback && !write_method) { if (db) sqlite3_close(db); return fccb(); }
   }
 
   // Load denies first (deny wins)
   auto denies = load_cidrs(db, "ip_deny");
   if (ip_in_list(denies, client_ip)) {
     sqlite3_close(db);
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(HttpStatusCode::k403Forbidden);
+    Json::Value det; det["ip"] = client_ip; det["reason"] = "Matched deny list";
+    auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_IP_DENY", "Access denied by IP policy", det);
     fcb(resp); return;
   }
 
-  // Allow list (allow wins)
+  // Allow list: if client IP is allowed, bypass API key authentication regardless of key presence/validity
   auto allows = load_cidrs(db, "ip_allow");
   if (ip_in_list(allows, client_ip)) { sqlite3_close(db); return fccb(); }
 
@@ -111,12 +120,19 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
   if (cst) sqlite3_finalize(cst);
   if (keyCount==0) { sqlite3_close(db); return fccb(); }
 
+  // Decide required role by method/path
+  const auto& path = req->path();
+  bool is_admin_path = (path.rfind("/admin/", 0) == 0);
+  bool is_search = (path == "/search");
+  bool need_write = write_method && !is_search; // POST/PUT/PATCH/DELETE except POST /search
+  bool need_admin = is_admin_path;
+
   // API key required
   auto key = get_api_key(req);
   if (!key) {
     sqlite3_close(db);
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(HttpStatusCode::k401Unauthorized);
+    Json::Value det; det["hint"] = "Provide API key via X-API-Key header or ?api_key= query."; det["required"] = need_admin?"admin":(need_write?"write":"read");
+    auto resp = karing::http::error(HttpStatusCode::k401Unauthorized, "E_NO_API_KEY", "API key required", det);
     fcb(resp); return;
   }
 
@@ -129,19 +145,34 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
   if (st) sqlite3_finalize(st);
   if (!ok) {
     sqlite3_close(db);
-    auto resp = drogon::HttpResponse::newHttpResponse();
-    resp->setStatusCode(HttpStatusCode::k401Unauthorized);
+    Json::Value det; det["hint"] = "Key not found or disabled";
+    auto resp = karing::http::error(HttpStatusCode::k401Unauthorized, "E_INVALID_API_KEY", "Invalid API key", det);
     fcb(resp); return;
   }
-  // Enforce role: GET/HEAD/OPTIONSはread、他はwrite
-  auto method = req->getMethod();
-  bool writeMethod = !(method==drogon::Get || method==drogon::Head || method==drogon::Options);
-  // Exception: allow POST /search as read operation
-  if (method==drogon::Post) {
-    const auto& p = req->path();
-    if (p == "/search") writeMethod = false; // treat as read
+  // Enforce role hierarchy: read < write < admin
+  if (need_admin) {
+    if (role != "admin") {
+      sqlite3_close(db);
+      Json::Value det; det["role"] = role; det["required"] = "admin";
+      auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_FORBIDDEN", "Insufficient role", det);
+      fcb(resp); return;
+    }
+  } else if (need_write) {
+    if (!(role=="write" || role=="admin")) {
+      sqlite3_close(db);
+      Json::Value det; det["role"] = role; det["required"] = "write or admin";
+      auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_FORBIDDEN", "Insufficient role", det);
+      fcb(resp); return;
+    }
+  } else {
+    // read requires any valid key (read/write/admin)
+    if (!(role=="read" || role=="write" || role=="admin")) {
+      sqlite3_close(db);
+      Json::Value det; det["role"] = role; det["required"] = "read or higher";
+      auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_FORBIDDEN", "Insufficient role", det);
+      fcb(resp); return;
+    }
   }
-  if (writeMethod && !(role=="write" || role=="admin")) { sqlite3_close(db); auto resp=drogon::HttpResponse::newHttpResponse(); resp->setStatusCode(HttpStatusCode::k403Forbidden); fcb(resp); return; }
 
   // Update usage
   sqlite3_exec(db, "BEGIN;", nullptr, nullptr, nullptr);

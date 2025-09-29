@@ -51,6 +51,6 @@ exec docker run --rm \
   -e KARING_DATA=/var/lib/karing/karing.db \
   ${KARING_LIMIT:+-e KARING_LIMIT=$KARING_LIMIT} \
   ${KARING_DISABLE_FTS:+-e KARING_DISABLE_FTS=$KARING_DISABLE_FTS} \
-  -e KARING_NO_AUTH=1 \
+  -e KARING_NO_AUTH=0 \
   -e KARING_ALLOW_LOCALHOST=1 \
   "$IMAGE_TAG"

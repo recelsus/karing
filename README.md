@@ -49,6 +49,16 @@ Configuration
   - Config: `%APPDATA%\karing\karing.json`
   - DB default: `%LOCALAPPDATA%\karing\karing.db`
 - Environment variables override config (e.g., `KARING_BASE_PATH`, `KARING_LIMIT`, etc.)
+- Precedence (runtime): `--config`/`KARING_CONFIG` > user config (`$XDG_CONFIG_HOME/karing/karing.json` or `~/.config/karing/karing.json`) > system (`/etc/karing/karing.json`) > bundled `config/karing.json` > embedded default.
+ - Note: This app does not require privileged write access; default config location is user config (`~/.config/karing`), not `/etc`. Docker image places the default config at `/root/.config/karing/karing.json`.
+- First run: when no user config exists, the selected config is copied into the user config path for future runs.
+- Defaults (XDG):
+  - DB: `$XDG_DATA_HOME/karing/karing.db` or `~/.local/share/karing/karing.db` if `XDG_DATA_HOME` is unset.
+  - Logs: `$XDG_STATE_HOME/karing/logs` or `~/.local/state/karing/logs` if `XDG_STATE_HOME` is unset.
+  - If the config file explicitly sets absolute paths, those take precedence.
+ - Env shortcuts:
+   - `KARING_DATA` sets the absolute DB path (overrides XDG and config).
+   - `KARING_LOG_PATH` sets the log directory (overrides XDG and config).
 - Details: see `docs/config.md`.
 
 Endpoints
@@ -69,8 +79,65 @@ Endpoints
   - Auth: `GET /search` is allowed for read; `POST /search` is also treated as a read operation (no write role required).
 
 Notes
-- Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/restore`, `/myapp/search`.
-- Auth: API key via `X-API-Key` or `?api_key=`, role‑based (read/write). See `docs/config.md`.
+- Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/search`.
+- Auth: API key via `X-API-Key` or `?api_key=`, role‑based (read/write/admin). See `docs/config.md`.
+
+Auth Policy
+-----------
+
+- Role hierarchy: `read < write < admin`.
+- IP precedence:
+  - `deny` match → always reject (even with a valid API key).
+  - `allow` match → bypass auth (accepted regardless of API key).
+  - neither → require API key with sufficient role.
+- Required roles by endpoint:
+  - `GET /`, `GET /health`, `GET/POST /search` → `read` or higher
+  - `POST /`, `PUT/PATCH/DELETE /` → `write` or higher
+  - `GET /admin/auth` → `admin` (unless IP allow bypass applies)
+
+Admin CLI (API Keys & IP Control)
+---------------------------------
+
+API key management and IP allow/deny lists can be managed via the `karing` CLI.
+
+- API keys
+  - `karing keys add --label "CI from repo A"`                   # Auto-generate and add an API key. Default role=write; attach label
+  - `karing keys add --role admin --label "ops emergency"`       # Generate an admin key (role=admin)
+  - `karing keys add --disabled --label "staged key"`            # Generate but start disabled (pre-rollout staging)
+  - `karing keys set-role 42 admin`                               # Update existing key (id=42) role: write/read → admin
+  - `karing keys set-label 42 "CI from repo B"`                   # Update label for existing key (id=42)
+  - `karing keys disable 42`                                      # Disable existing key (enabled=0), reversible
+  - `karing keys enable 42`                                       # Re-enable a previously disabled key (enabled=1)
+  - `karing keys rm 42`                                           # Remove key (logical by default; use --hard for physical delete)
+  - `karing keys rm 42 --hard`                                    # Physically delete key (fully removed from DB)
+  - `karing keys add --label "will show secret once" --json`      # Output result as JSON; secret is shown only on creation
+    # → {"id":..., "role":"write","label":"...","enabled":1,"secret":"..."}
+
+- IP allow/deny
+  - `karing ip add 203.0.113.0/24 allow`                          # Add CIDR to allow list (stored as-is)
+  - `karing ip add 203.0.113.10 deny`                             # Add a single IPv4 to deny list
+  - `karing ip add 192.168.1.5/24 allow`                          # Host/prefix format is normalized to network address (192.168.1.0/24)
+  - `karing ip rm allow:12`                                       # Remove id=12 from allow table (physical delete; prefer disable for soft ops)
+  - `karing ip rm deny:7`                                         # Remove id=7 from deny table
+  - `karing ip add 203.0.113.10/32 deny`                          # Overlaps with existing allow 203.0.113.0/24, still allowed to add
+    # At evaluation time, the most specific prefix wins; this /32 deny takes precedence
+
+Admin Endpoints
+---------------
+
+- `GET /admin/auth` (admin)
+  - Returns current auth state: API keys and IP lists.
+  - Response shape:
+    ```json
+    {
+      "api_keys": [
+        {"id":1,"key":"...","label":"...","enabled":true,"role":"write","created_at":...,"last_used_at":...,"last_ip":"..."}
+      ],
+      "ip_allow": [ {"id":12, "cidr":"203.0.113.0/24", "enabled":true, "created_at":...} ],
+      "ip_deny":  [ {"id":7,  "cidr":"203.0.113.10/32", "enabled":true, "created_at":...} ]
+    }
+    ```
+  - Use the `id` values with `karing ip rm allow:<id>` / `deny:<id>`.
 
 Response format
 ---------------
@@ -106,7 +173,8 @@ Binaries and Docker
   - Filenames: `karing-ubuntu` (Linux), `karing-macos` (macOS).
 - Docker
   - Published to GHCR by CI: `ghcr.io/recelsus/karing` with tags for branch/sha/semver.
-  - Container respects env vars: `KARING_CONFIG`, `KARING_DATA`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`.
+  - Container respects env vars: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`.
+  - Defaults baked in Dockerfile: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing` (override with `-e` or compose `environment:`).
 
 Docs
 ----

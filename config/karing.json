@@ -1,7 +1,8 @@
 {
   "app": {
     "name": "karing",
-    "threads": 0
+    "threads": 0,
+    "require_tls": false
   },
   "listeners": [
     {
@@ -18,15 +19,10 @@
   },
   "client_max_body_size": 20971520,
   "karing": {
-    "limit": 10,
+    "limit": 100,
     "max_file_bytes": 20971520,
-    "max_text_bytes": 10485760
+    "max_text_bytes": 10485760,
+    "base_path": "/"
   },
-  "db_clients": [
-    {
-      "name": "default",
-      "rdbms": "sqlite3",
-      "filename": "./karing.db"
-    }
-  ]
+  "db_clients": []
 }

@@ -1,0 +1,5 @@
+#pragma once
+// Generated at configure time. Do not edit.
+#define KARING_EMBED_HAVE_USER_JSON @_HAVE_JSON@
+#define KARING_EMBED_USER_JSON "@_EMBED_JSON_ESCAPED@"
+
