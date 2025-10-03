@@ -201,6 +201,7 @@ if (BUILD_TESTING)
     tests/strings_test.cpp
     tests/cursor_test.cpp
     tests/search_query_test.cpp
+    tests/cli_smoke_test.cpp
     src/utils/strings.cpp
     src/utils/cursor.cpp
     src/utils/search_query.cpp

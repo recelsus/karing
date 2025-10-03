@@ -222,6 +222,302 @@ int main(int argc, char* argv[]) {
     // ignore symlink errors
   }
 
+  // Ensure schema exists before any potential CLI-only operations
+  karing::db::init_sqlite_schema_file(resolvedDb);
+
+  // Fast-path: handle CLI subcommands and legacy flags before loading Drogon
+  {
+    auto has_arg = [&](const char* flag){ return std::find_if(argv+1, argv+argc, [&](const char* a){return std::string(a)==flag;}) != argv+argc; };
+    bool wants_cli = false;
+    if (argc >= 2) {
+      for (int i=1;i<argc;++i) { std::string c = argv[i]; if (c == "keys" || c == "ip") { wants_cli = true; break; } }
+    }
+    static const char* legacy_flags[] = {"--show-api-keys","--api-key-add","--api-key-disable","--api-key-enable","--api-key-set-role","--api-key-delete","--api-key-issue","--show-ip-rules","--ip-allow-add","--ip-allow-del","--ip-deny-add","--ip-deny-del","--issue"};
+    for (const char* f : legacy_flags) { if (has_arg(f)) { wants_cli = true; break; } }
+    if (wants_cli) {
+      auto hasArg = [&](const char* flag){ return std::find_if(argv+1, argv+argc, [&](const char* a){return std::string(a)==flag;}) != argv+argc; };
+      auto argValue = [&](const char* flag)->std::optional<std::string>{ for (int i=1;i<argc-1;++i) if (std::string(argv[i])==flag) return std::string(argv[i+1]); return std::nullopt; };
+      auto generate_secret_hex = []() -> std::optional<std::string> {
+        // Generate 192-bit secret as hex (48 chars)
+        unsigned char buf[24];
+        if (RAND_bytes(buf, sizeof(buf)) != 1) return std::nullopt;
+        static const char* hex = "0123456789abcdef";
+        std::string key; key.resize(sizeof(buf) * 2);
+        for (size_t i=0;i<sizeof(buf);++i) { key[i*2] = hex[(buf[i]>>4)&0xF]; key[i*2+1] = hex[buf[i]&0xF]; }
+        return key;
+      };
+      auto normalize_ipv4_cidr = [](const std::string& s) -> std::string {
+        // Accepts forms: a.b.c.d, a.b.c.d/len; returns normalised CIDR if prefix present
+        // No validation for IPv6 here; returns input unchanged if not IPv4
+        auto slash = s.find('/');
+        std::string ip = s.substr(0, slash);
+        int bits = -1;
+        if (slash != std::string::npos) {
+          try { bits = std::stoi(s.substr(slash+1)); } catch (...) { bits = -1; }
+          if (bits < 0 || bits > 32) return s; // leave as-is
+        }
+        int o[4]={0,0,0,0}; char c;
+        std::istringstream iss(ip);
+        if (!(iss >> o[0] >> c >> o[1] >> c >> o[2] >> c >> o[3])) return s;
+        for (int i=0;i<4;++i) { if (o[i] < 0 || o[i] > 255) return s; }
+        if (bits < 0) return s; // no prefix -> leave unchanged
+        uint32_t v = (static_cast<uint32_t>(o[0]) << 24)
+                   | (static_cast<uint32_t>(o[1]) << 16)
+                   | (static_cast<uint32_t>(o[2]) << 8)
+                   | (static_cast<uint32_t>(o[3]));
+        uint32_t mask = (bits==0)? 0u : 0xFFFFFFFFu << (32 - bits);
+        uint32_t net = v & mask;
+        int n0 = (net>>24)&0xFF, n1 = (net>>16)&0xFF, n2 = (net>>8)&0xFF, n3 = net & 0xFF;
+        std::ostringstream oss; oss << n0 << "." << n1 << "." << n2 << "." << n3 << "/" << bits;
+        return oss.str();
+      };
+
+      // Subcommand dispatcher (early path)
+      if (argc >= 2) {
+        std::string cmd1 = argv[1];
+        if (cmd1 == "keys") {
+          if (argc >= 3) {
+            std::string cmd2 = argv[2];
+            if (cmd2 == "add") {
+              bool want_json = false, want_disabled = false; std::string role = "write"; std::string label;
+              for (int i=3; i<argc; ++i) {
+                std::string a = argv[i];
+                if (a == "--json") want_json = true;
+                else if (a == "--disabled") want_disabled = true;
+                else if (a == "--role" && i+1 < argc) { role = argv[++i]; }
+                else if (a == "--label" && i+1 < argc) { label = argv[++i]; }
+              }
+              auto maybe = generate_secret_hex(); if (!maybe) { std::cerr << "random generation failed\n"; return 1; }
+              const std::string secret = *maybe;
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; const char* ins="INSERT INTO api_keys(key,label,enabled,role,created_at) VALUES(?,?,?,?,strftime('%s','now'));";
+              if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) {
+                sqlite3_bind_text(st,1,secret.c_str(),-1,SQLITE_TRANSIENT);
+                if (!label.empty()) sqlite3_bind_text(st,2,label.c_str(),-1,SQLITE_TRANSIENT); else sqlite3_bind_null(st,2);
+                sqlite3_bind_int(st,3, want_disabled?0:1);
+                sqlite3_bind_text(st,4,role.c_str(),-1,SQLITE_TRANSIENT);
+                sqlite3_step(st);
+              }
+              if (st) sqlite3_finalize(st);
+              long long new_id = sqlite3_last_insert_rowid(dbh);
+              sqlite3_close(dbh);
+              if (want_json) {
+                std::cout << "{\"id\":" << new_id
+                          << ",\"role\":\"" << role << "\""
+                          << ",\"label\":\"" << label << "\""
+                          << ",\"enabled\":" << (want_disabled?0:1)
+                          << ",\"secret\":\"" << secret << "\"}" << std::endl;
+              } else {
+                std::cout << secret << std::endl;
+              }
+              return 0;
+            } else if (cmd2 == "set-role" && argc >= 5) {
+              int id = std::atoi(argv[3]); std::string role = argv[4];
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; const char* upd="UPDATE api_keys SET role=? WHERE id=?;";
+              if (sqlite3_prepare_v2(dbh, upd, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,role.c_str(),-1,SQLITE_TRANSIENT); sqlite3_bind_int(st,2,id); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << "role updated\n"; return 0;
+            } else if (cmd2 == "set-label" && argc >= 5) {
+              int id = std::atoi(argv[3]); std::string label = argv[4];
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; const char* upd="UPDATE api_keys SET label=? WHERE id=?;";
+              if (sqlite3_prepare_v2(dbh, upd, -1, &st, nullptr)==SQLITE_OK) { if (!label.empty()) sqlite3_bind_text(st,1,label.c_str(),-1,SQLITE_TRANSIENT); else sqlite3_bind_null(st,1); sqlite3_bind_int(st,2,id); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << "label updated\n"; return 0;
+            } else if (cmd2 == "disable" && argc >= 4) {
+              int id = std::atoi(argv[3]);
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; const char* upd="UPDATE api_keys SET enabled=0 WHERE id=?;";
+              if (sqlite3_prepare_v2(dbh, upd, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_int(st,1,id); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << "disabled\n"; return 0;
+            } else if (cmd2 == "enable" && argc >= 4) {
+              int id = std::atoi(argv[3]);
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; const char* upd="UPDATE api_keys SET enabled=1 WHERE id=?;";
+              if (sqlite3_prepare_v2(dbh, upd, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_int(st,1,id); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << "enabled\n"; return 0;
+            } else if (cmd2 == "rm" && argc >= 4) {
+              int id = std::atoi(argv[3]);
+              bool hard = false; for (int i=4;i<argc;++i) if (std::string(argv[i])=="--hard") hard = true;
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr;
+              const char* sql = hard? "DELETE FROM api_keys WHERE id=?;" : "UPDATE api_keys SET enabled=0 WHERE id=?;";
+              if (sqlite3_prepare_v2(dbh, sql, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_int(st,1,id); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << (hard?"deleted\n":"disabled\n"); return 0;
+            }
+          }
+        } else if (cmd1 == "ip") {
+          if (argc >= 3) {
+            std::string cmd2 = argv[2];
+            if (cmd2 == "add" && argc >= 5) {
+              std::string raw = argv[3]; std::string list = argv[4];
+              std::string to_store = normalize_ipv4_cidr(raw);
+              const char* table = (list == "allow")? "ip_allow" : (list == "deny" ? "ip_deny" : nullptr);
+              if (!table) { std::cerr << "ip list must be allow|deny\n"; return 1; }
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; std::string ins = std::string("INSERT OR IGNORE INTO ") + table + "(cidr, enabled, created_at) VALUES(?,1,strftime('%s','now'));";
+              if (sqlite3_prepare_v2(dbh, ins.c_str(), -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,to_store.c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << "ok\n"; return 0;
+            } else if (cmd2 == "del" && argc >= 4) {
+              std::string spec = argv[3];
+              auto pos = spec.find(':'); if (pos==std::string::npos) { std::cerr << "use allow:<id> or deny:<id>\n"; return 1; }
+              std::string list = spec.substr(0,pos); int id = std::atoi(spec.substr(pos+1).c_str());
+              const char* table = (list == "allow")? "ip_allow" : (list == "deny" ? "ip_deny" : nullptr);
+              if (!table) { std::cerr << "ip list must be allow|deny\n"; return 1; }
+              sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+              sqlite3_stmt* st=nullptr; std::string del = std::string("DELETE FROM ") + table + " WHERE id=?;";
+              if (sqlite3_prepare_v2(dbh, del.c_str(), -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_int(st,1,id); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+              std::cout << "ok\n"; return 0;
+            }
+          }
+        }
+      }
+      if (const char* env = std::getenv("KARING_SHOW_API_KEYS"); (env && *env) || hasArg("--show-api-keys")) {
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READONLY, nullptr)!=SQLITE_OK) return 1;
+        const char* q="SELECT id, key, label, enabled, created_at, last_used_at, last_ip FROM api_keys ORDER BY id;";
+        sqlite3_stmt* st=nullptr; if (sqlite3_prepare_v2(dbh, q, -1, &st, nullptr)==SQLITE_OK) {
+          std::cout << "id\tkey\tlabel\tenabled\tcreated_at\tlast_used_at\tlast_ip\n";
+          while (sqlite3_step(st)==SQLITE_ROW) {
+            const unsigned char* k = sqlite3_column_text(st,1);
+            const unsigned char* l = sqlite3_column_text(st,2);
+            const unsigned char* ip = sqlite3_column_text(st,6);
+            std::cout << sqlite3_column_int(st,0) << "\t"
+                      << (const char*)(k ? k : (const unsigned char*)"") << "\t"
+                      << (const char*)(l ? l : (const unsigned char*)"") << "\t"
+                      << sqlite3_column_int(st,3) << "\t"
+                      << sqlite3_column_int64(st,4) << "\t"
+                      << (sqlite3_column_type(st,5)!=SQLITE_NULL? std::to_string(sqlite3_column_int64(st,5)) : std::string("")) << "\t"
+                      << (const char*)(ip ? ip : (const unsigned char*)"")
+                      << "\n";
+          }
+        }
+        if (st) sqlite3_finalize(st); sqlite3_close(dbh); return 0;
+      }
+      if (hasArg("--api-key-add")) {
+        auto key = argValue("--api-key-add"); if (!key) { std::cerr<<"--api-key-add <key> required\n"; return 1; }
+        auto label = argValue("--label"); auto role = argValue("--role"); std::string r = role?*role:"write";
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* ins="INSERT INTO api_keys(key,label,enabled,role,created_at) VALUES(?,?,1,?,strftime('%s','now'));";
+        if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) {
+          sqlite3_bind_text(st,1,key->c_str(),-1,SQLITE_TRANSIENT);
+          if (label && !label->empty()) sqlite3_bind_text(st,2,label->c_str(),-1,SQLITE_TRANSIENT); else sqlite3_bind_null(st,2);
+          sqlite3_bind_text(st,3,r.c_str(),-1,SQLITE_TRANSIENT);
+          sqlite3_step(st);
+        }
+        if (st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"added\n"; return 0;
+      }
+      if (hasArg("--api-key-disable") || hasArg("--api-key-enable")) {
+        bool enable = hasArg("--api-key-enable"); auto key = argValue(enable?"--api-key-enable":"--api-key-disable"); if(!key){ std::cerr<<"key required\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* upd="UPDATE api_keys SET enabled=? WHERE key=?;";
+        if (sqlite3_prepare_v2(dbh, upd, -1, &st, nullptr)==SQLITE_OK) {
+          sqlite3_bind_int(st,1, enable?1:0);
+          sqlite3_bind_text(st,2,key->c_str(),-1,SQLITE_TRANSIENT);
+          sqlite3_step(st);
+        }
+        if (st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<(enable?"enabled\n":"disabled\n"); return 0;
+      }
+      if (hasArg("--api-key-set-role")) {
+        auto key = argValue("--api-key-set-role"); auto role = argValue("--role"); if (!key || !role) { std::cerr<<"--api-key-set-role <key> --role <read|write|admin>\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* upd="UPDATE api_keys SET role=? WHERE key=?;";
+        if (sqlite3_prepare_v2(dbh, upd, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,role->c_str(),-1,SQLITE_TRANSIENT); sqlite3_bind_text(st,2,key->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"role updated\n"; return 0;
+      }
+      if (hasArg("--api-key-delete")) {
+        auto key = argValue("--api-key-delete"); if (!key) { std::cerr<<"--api-key-delete <key>\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* del="DELETE FROM api_keys WHERE key=?;";
+        if (sqlite3_prepare_v2(dbh, del, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,key->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if (st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"deleted\n"; return 0;
+      }
+      if (hasArg("--api-key-issue")) {
+        auto maybe_key = generate_secret_hex();
+        if (!maybe_key) { std::cerr<<"random generation failed\n"; return 1; }
+        const std::string key = *maybe_key;
+        auto label = argValue("--label"); auto role = argValue("--role"); std::string r = role?*role:"write";
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* ins="INSERT INTO api_keys(key,label,enabled,role,created_at) VALUES(?,?,1,?,strftime('%s','now'));";
+        if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) {
+          sqlite3_bind_text(st,1,key.c_str(),-1,SQLITE_TRANSIENT);
+          if (label && !label->empty()) sqlite3_bind_text(st,2,label->c_str(),-1,SQLITE_TRANSIENT); else sqlite3_bind_null(st,2);
+          sqlite3_bind_text(st,3,r.c_str(),-1,SQLITE_TRANSIENT);
+          sqlite3_step(st);
+        }
+        if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+        std::cout << key << "\n";
+        return 0;
+      }
+      if (hasArg("--show-ip-rules")) {
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READONLY, nullptr)!=SQLITE_OK) return 1;
+        auto dump = [&](const char* table){
+          std::string sql = std::string("SELECT cidr, enabled, created_at FROM ") + table + " ORDER BY id;";
+          sqlite3_stmt* st=nullptr; if (sqlite3_prepare_v2(dbh, sql.c_str(), -1, &st, nullptr)==SQLITE_OK) {
+            std::cout << table << "\n";
+            std::cout << "cidr\tenabled\tcreated_at\n";
+            while (sqlite3_step(st)==SQLITE_ROW) {
+              const unsigned char* t = sqlite3_column_text(st,0);
+              std::cout << (const char*)(t ? t : (const unsigned char*)"") << "\t"
+                        << sqlite3_column_int(st,1) << "\t"
+                        << sqlite3_column_int64(st,2) << "\n";
+            }
+          }
+          if (st) sqlite3_finalize(st);
+        };
+        dump("ip_allow");
+        dump("ip_deny");
+        sqlite3_close(dbh);
+        return 0;
+      }
+      if (hasArg("--ip-allow-add")) {
+        auto cidr = argValue("--ip-allow-add"); if (!cidr) { std::cerr<<"--ip-allow-add <cidr_or_ip>\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* ins="INSERT OR IGNORE INTO ip_allow(cidr, enabled, created_at) VALUES(?,1,strftime('%s','now'));";
+        if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,cidr->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if(st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"ok\n"; return 0;
+      }
+      if (hasArg("--ip-allow-del")) {
+        auto cidr = argValue("--ip-allow-del"); if (!cidr) { std::cerr<<"--ip-allow-del <cidr_or_ip>\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* del="DELETE FROM ip_allow WHERE cidr=?;";
+        if (sqlite3_prepare_v2(dbh, del, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,cidr->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if(st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"ok\n"; return 0;
+      }
+      if (hasArg("--ip-deny-add")) {
+        auto cidr = argValue("--ip-deny-add"); if (!cidr) { std::cerr<<"--ip-deny-add <cidr_or_ip>\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* ins="INSERT OR IGNORE INTO ip_deny(cidr, enabled, created_at) VALUES(?,1,strftime('%s','now'));";
+        if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,cidr->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if(st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"ok\n"; return 0;
+      }
+      if (hasArg("--ip-deny-del")) {
+        auto cidr = argValue("--ip-deny-del"); if (!cidr) { std::cerr<<"--ip-deny-del <cidr_or_ip>\n"; return 1; }
+        sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+        sqlite3_stmt* st=nullptr; const char* del="DELETE FROM ip_deny WHERE cidr=?;";
+        if (sqlite3_prepare_v2(dbh, del, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,cidr->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if(st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"ok\n"; return 0;
+      }
+      if (hasArg("--issue")) {
+        auto v = argValue("--issue"); if (!v) { std::cerr<<"--issue <role|cidr>\n"; return 1; }
+        bool looks_ip = (v->find('.') != std::string::npos) || (v->find(':') != std::string::npos) || (v->find('/') != std::string::npos);
+        if (looks_ip) {
+          sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+          sqlite3_stmt* st=nullptr; const char* ins="INSERT OR IGNORE INTO ip_allow(cidr, enabled, created_at) VALUES(?,1,strftime('%s','now'));";
+          if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,v->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if(st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"ok\n"; return 0;
+        } else {
+          auto maybe_key = generate_secret_hex();
+          if (!maybe_key) { std::cerr<<"random generation failed\n"; return 1; }
+          const std::string key = *maybe_key;
+          auto label = argValue("--label");
+          sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
+          sqlite3_stmt* st=nullptr; const char* ins="INSERT INTO api_keys(key,label,enabled,role,created_at) VALUES(?,?,1,?,strftime('%s','now'));";
+          if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) {
+            sqlite3_bind_text(st,1,key.c_str(),-1,SQLITE_TRANSIENT);
+            if (label && !label->empty()) sqlite3_bind_text(st,2,label->c_str(),-1,SQLITE_TRANSIENT); else sqlite3_bind_null(st,2);
+            sqlite3_bind_text(st,3,v->c_str(),-1,SQLITE_TRANSIENT);
+            sqlite3_step(st);
+          }
+          if (st) sqlite3_finalize(st); sqlite3_close(dbh);
+          std::cout << key << "\n";
+          return 0;
+        }
+      }
+    }
+  }
+
   // Choose configuration source: explicit path or embedded default (with optional port override)
   // If bundled config/karing.json exists, use it as default (do NOT override with embedded).
   if (configAbs.empty()) {
@@ -288,6 +584,8 @@ int main(int argc, char* argv[]) {
       }
     }
   }
+  // Ensure default relative log directory exists for configs using "./logs"
+  try { std::filesystem::create_directories("logs"); } catch (...) {}
   // Load Drogon configuration
   drogon::app().loadConfigFile(configAbs.string());
   // KARING_LOG_PATH env overrides log path if provided; else XDG state if config is missing/relative
@@ -660,6 +958,7 @@ int main(int argc, char* argv[]) {
                   << "\n";
       }
     }
+    else { LOG_WARN << "Failed to prepare show-api-keys query: " << sqlite3_errmsg(dbh); }
     if (st) sqlite3_finalize(st); sqlite3_close(dbh); return 0;
   }
 
@@ -735,6 +1034,7 @@ int main(int argc, char* argv[]) {
                     << sqlite3_column_int64(st,2) << "\n";
         }
       }
+      else { LOG_WARN << "Failed to prepare show-ip-rules query for table '" << table << "': " << sqlite3_errmsg(dbh); }
       if (st) sqlite3_finalize(st);
     };
     dump("ip_allow");
