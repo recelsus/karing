@@ -166,7 +166,14 @@ int main(int argc, char* argv[]) {
     // Linux: /proc/self/exe
     char buf[4096];
     ssize_t len = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len > 0) { buf[len] = '\0'; execPath = fs::path(buf); }
+    if (len > 0) {
+      // Ensure NUL-termination within bounds
+      buf[len] = '\0';
+      execPath = fs::path(buf);
+    } else {
+      // Could not resolve executable path; will fall back to argv[0]
+      LOG_WARN << "readlink(/proc/self/exe) failed; falling back to argv[0]";
+    }
 #endif
     if (execPath.empty() && argc > 0) {
       execPath = fs::absolute(argv[0]);
@@ -177,8 +184,20 @@ int main(int argc, char* argv[]) {
 
   // Create and change to the DB's parent directory so config relative paths (db, logs) resolve there
   fs::path dataPath = fs::absolute(dataFile);
-  fs::create_directories(dataPath.parent_path());
-  fs::current_path(dataPath.parent_path());
+  {
+    // Create the DB parent directory and change CWD with error checks
+    std::error_code ec;
+    fs::create_directories(dataPath.parent_path(), ec);
+    if (ec) {
+      LOG_ERROR << "Failed to create data directory '" << dataPath.parent_path().string() << "': " << ec.message();
+      return 1;
+    }
+    fs::current_path(dataPath.parent_path(), ec);
+    if (ec) {
+      LOG_ERROR << "Failed to change working directory to '" << dataPath.parent_path().string() << "': " << ec.message();
+      return 1;
+    }
+  }
 
   // Ensure DB file exists at the chosen path (no SQLite calls yet)
   const auto resolvedDb = karing::db::ensure_db_path(dataPath.string());
@@ -226,8 +245,17 @@ int main(int argc, char* argv[]) {
     // Write embedded config for Drogon to load from the working directory
     const std::string embeddedPath = (fs::current_path() / "drogon.embedded.json").string();
     {
+      // Persist embedded config and verify write success
       std::ofstream ofs(embeddedPath);
+      if (!ofs.is_open()) {
+        LOG_ERROR << "Failed to open '" << embeddedPath << "' for writing";
+        return 1;
+      }
       ofs << jsonContent;
+      if (!ofs.good()) {
+        LOG_ERROR << "Failed to write embedded config to '" << embeddedPath << "'";
+        return 1;
+      }
     }
     configAbs = fs::absolute(embeddedPath);
 
@@ -247,9 +275,16 @@ int main(int argc, char* argv[]) {
     if (!userCfg.empty()) {
       std::error_code ec;
       fs::create_directories(userCfg.parent_path(), ec);
-      if (!fs::exists(userCfg)) {
+      if (ec) {
+        LOG_WARN << "Could not create user config directory '" << userCfg.parent_path().string() << "': " << ec.message();
+      } else if (!fs::exists(userCfg)) {
         std::ofstream ucfg(userCfg.string());
-        ucfg << jsonContent;
+        if (!ucfg.is_open()) {
+          LOG_WARN << "Could not open user config file '" << userCfg.string() << "' for writing";
+        } else {
+          ucfg << jsonContent;
+          if (!ucfg.good()) LOG_WARN << "Failed while writing user config to '" << userCfg.string() << "'";
+        }
       }
     }
   }
@@ -461,7 +496,7 @@ int main(int argc, char* argv[]) {
   auto argValue = [&](const char* flag)->std::optional<std::string>{ for (int i=1;i<argc-1;++i) if (std::string(argv[i])==flag) return std::string(argv[i+1]); return std::nullopt; };
 
   auto generate_secret_hex = []() -> std::optional<std::string> {
-    // Generate 192-bit secret as hex (32 chars)
+    // Generate 192-bit secret as hex (48 chars)
     unsigned char buf[24];
     if (RAND_bytes(buf, sizeof(buf)) != 1) return std::nullopt;
     static const char* hex = "0123456789abcdef";
@@ -485,7 +520,11 @@ int main(int argc, char* argv[]) {
     if (!(iss >> o[0] >> c >> o[1] >> c >> o[2] >> c >> o[3])) return s;
     for (int i=0;i<4;++i) { if (o[i] < 0 || o[i] > 255) return s; }
     if (bits < 0) return s; // no prefix -> leave unchanged
-    uint32_t v = (uint32_t)((o[0]<<24) | (o[1]<<16) | (o[2]<<8) | o[3]);
+    // Assemble IPv4 as unsigned to avoid undefined behaviour on shifts
+    uint32_t v = (static_cast<uint32_t>(o[0]) << 24)
+               | (static_cast<uint32_t>(o[1]) << 16)
+               | (static_cast<uint32_t>(o[2]) << 8)
+               | (static_cast<uint32_t>(o[3]));
     uint32_t mask = (bits==0)? 0u : 0xFFFFFFFFu << (32 - bits);
     uint32_t net = v & mask;
     int n0 = (net>>24)&0xFF, n1 = (net>>16)&0xFF, n2 = (net>>8)&0xFF, n3 = net & 0xFF;
@@ -608,13 +647,16 @@ int main(int argc, char* argv[]) {
     sqlite3_stmt* st=nullptr; if (sqlite3_prepare_v2(dbh, q, -1, &st, nullptr)==SQLITE_OK) {
       std::cout << "id\tkey\tlabel\tenabled\tcreated_at\tlast_used_at\tlast_ip\n";
       while (sqlite3_step(st)==SQLITE_ROW) {
+        const unsigned char* k = sqlite3_column_text(st,1);
+        const unsigned char* l = sqlite3_column_text(st,2);
+        const unsigned char* ip = sqlite3_column_text(st,6);
         std::cout << sqlite3_column_int(st,0) << "\t"
-                  << (const char*)sqlite3_column_text(st,1) << "\t"
-                  << (const char*)(sqlite3_column_text(st,2)?sqlite3_column_text(st,2): (const unsigned char*)"") << "\t"
+                  << (const char*)(k ? k : (const unsigned char*)"") << "\t"
+                  << (const char*)(l ? l : (const unsigned char*)"") << "\t"
                   << sqlite3_column_int(st,3) << "\t"
                   << sqlite3_column_int64(st,4) << "\t"
                   << (sqlite3_column_type(st,5)!=SQLITE_NULL? std::to_string(sqlite3_column_int64(st,5)) : std::string("")) << "\t"
-                  << (const char*)(sqlite3_column_text(st,6)?sqlite3_column_text(st,6): (const unsigned char*)"")
+                  << (const char*)(ip ? ip : (const unsigned char*)"")
                   << "\n";
       }
     }
@@ -661,11 +703,10 @@ int main(int argc, char* argv[]) {
 
   if (hasArg("--api-key-issue")) {
     // Generate a random API key and insert with optional --label and --role
-    unsigned char buf[24]; // 192-bit -> 32 hex chars + padding
-    if (RAND_bytes(buf, sizeof(buf)) != 1) { std::cerr<<"RAND_bytes failed\n"; return 1; }
-    static const char* hex = "0123456789abcdef";
-    std::string key; key.resize(sizeof(buf) * 2);
-    for (size_t i=0;i<sizeof(buf);++i) { key[i*2] = hex[(buf[i]>>4)&0xF]; key[i*2+1] = hex[buf[i]&0xF]; }
+    // 192-bit -> 48 hex chars
+    auto maybe_key = generate_secret_hex();
+    if (!maybe_key) { std::cerr<<"random generation failed\n"; return 1; }
+    const std::string key = *maybe_key;
     auto label = argValue("--label"); auto role = argValue("--role"); std::string r = role?*role:"write";
     sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
     sqlite3_stmt* st=nullptr; const char* ins="INSERT INTO api_keys(key,label,enabled,role,created_at) VALUES(?,?,1,?,strftime('%s','now'));";
@@ -688,7 +729,8 @@ int main(int argc, char* argv[]) {
         std::cout << table << "\n";
         std::cout << "cidr\tenabled\tcreated_at\n";
         while (sqlite3_step(st)==SQLITE_ROW) {
-          std::cout << (const char*)sqlite3_column_text(st,0) << "\t"
+          const unsigned char* t = sqlite3_column_text(st,0);
+          std::cout << (const char*)(t ? t : (const unsigned char*)"") << "\t"
                     << sqlite3_column_int(st,1) << "\t"
                     << sqlite3_column_int64(st,2) << "\n";
         }
@@ -738,10 +780,9 @@ int main(int argc, char* argv[]) {
       if (sqlite3_prepare_v2(dbh, ins, -1, &st, nullptr)==SQLITE_OK) { sqlite3_bind_text(st,1,v->c_str(),-1,SQLITE_TRANSIENT); sqlite3_step(st);} if(st) sqlite3_finalize(st); sqlite3_close(dbh); std::cout<<"ok\n"; return 0;
     } else {
       // role
-      unsigned char buf[24]; if (RAND_bytes(buf, sizeof(buf)) != 1) { std::cerr<<"RAND_bytes failed\n"; return 1; }
-      static const char* hex = "0123456789abcdef";
-      std::string key; key.resize(sizeof(buf) * 2);
-      for (size_t i=0;i<sizeof(buf);++i) { key[i*2] = hex[(buf[i]>>4)&0xF]; key[i*2+1] = hex[buf[i]&0xF]; }
+      auto maybe_key = generate_secret_hex();
+      if (!maybe_key) { std::cerr<<"random generation failed\n"; return 1; }
+      const std::string key = *maybe_key;
       auto label = argValue("--label");
       sqlite3* dbh=nullptr; if (sqlite3_open_v2(resolvedDb.c_str(), &dbh, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) return 1;
       sqlite3_stmt* st=nullptr; const char* ins="INSERT INTO api_keys(key,label,enabled,role,created_at) VALUES(?,?,1,?,strftime('%s','now'));";
