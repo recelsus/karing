@@ -7,10 +7,11 @@
 namespace karing::controllers {
 
 void root_controller::root(const drogon::HttpRequestPtr& req, std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+  auto& options_state = karing::options::runtime_options::instance();
   Json::Value data;
   data["service"] = "karing";
   data["version"] = KARING_VERSION;
-  data["base_path"] = karing::options::base_path();
+  data["base_path"] = options_state.base_path();
   return cb(karing::http::ok(data));
 }
 

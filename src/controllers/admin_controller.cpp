@@ -8,9 +8,10 @@ namespace karing::controllers {
 
 void admin_controller::list_auth(const drogon::HttpRequestPtr& req,
                                  std::function<void(const drogon::HttpResponsePtr&)>&& cb) {
+  auto& options_state = karing::options::runtime_options::instance();
   // Open DB (read-only)
   sqlite3* db = nullptr;
-  if (sqlite3_open_v2(karing::options::db_path().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+  if (sqlite3_open_v2(options_state.db_path().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(drogon::k500InternalServerError);
     cb(resp);

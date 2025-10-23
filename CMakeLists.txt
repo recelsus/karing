@@ -10,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(karing
   src/main.cpp
+  src/app/bootstrap.cpp
+  src/app/cli_dispatcher.cpp
   src/db/db_init.cpp
   src/db/schema_pragmas.cpp
   src/db/schema_config.cpp

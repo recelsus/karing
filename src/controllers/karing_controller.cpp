@@ -57,7 +57,8 @@ Json::Value record_to_json(const dao::KaringRecord& r) {
 }
 
 void karing_controller::get_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   auto params = req->getParameters();
   bool want_json = (params.find("json") != params.end() && params.at("json") == "true");
 
@@ -144,7 +145,8 @@ void karing_controller::get_karing(const HttpRequestPtr& req, std::function<void
 }
 
 void karing_controller::search(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   auto params = req->getParameters();
   // POST JSON body support
   Json::Value body; if (req->method()==drogon::Post && req->getHeader("content-type").find("application/json")!=std::string::npos) { if (auto j=req->getJsonObject()) body=*j; }
@@ -152,7 +154,8 @@ void karing_controller::search(const HttpRequestPtr& req, std::function<void(con
   auto get_int = [&](const char* k, int def)->int{ if (body.isMember(k) && body[k].isInt()) return body[k].asInt(); auto it=params.find(k); if (it!=params.end()) { try { return std::stoi(it->second);} catch(...){} } return def; };
 
   int offset = 0; // offset is not supported (fixed to 0)
-  int lim = get_int("limit", options::runtime_limit()); lim = std::min(std::max(1, lim), options::runtime_limit());
+  int lim = get_int("limit", options_state.runtime_limit());
+  lim = std::min(std::max(1, lim), options_state.runtime_limit());
   std::string q = get_str("q");
   std::optional<int> is_file; std::string ty=get_str("type"); if (ty=="text") is_file=0; else if (ty=="file") is_file=1;
 
@@ -183,7 +186,8 @@ void karing_controller::search(const HttpRequestPtr& req, std::function<void(con
 }
 
 void karing_controller::post_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   const auto& ctype = req->getHeader("content-type");
   // client_ip removed
 
@@ -191,7 +195,7 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
     auto json = req->getJsonObject();
     if (!json || !(*json)["content"].isString()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
     std::string content = (*json)["content"].asString();
-    const auto maxText = karing::options::max_text_bytes();
+    const auto maxText = options_state.max_text_bytes();
     if ((long long)content.size() > (long long)maxText) {
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
@@ -218,7 +222,7 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
 
     // Read file bytes
     std::string data(f.fileData(), f.fileLength());
-    const auto maxFile = karing::options::max_file_bytes();
+    const auto maxFile = options_state.max_file_bytes();
     if ((long long)data.size() > (long long)maxFile) {
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
     }
@@ -232,7 +236,8 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
 }
 
 void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   auto params = req->getParameters();
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
@@ -242,7 +247,7 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
     auto json = req->getJsonObject();
     if (!json || !(*json)["content"].isString()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
     std::string content = (*json)["content"].asString();
-    const auto maxText = karing::options::max_text_bytes();
+    const auto maxText = options_state.max_text_bytes();
     if ((long long)content.size() > (long long)maxText) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     // Ignore client-provided syntax; always treat as plain text
     if (!dao.update_text(id, content)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
@@ -257,7 +262,8 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
     if (!(starts_with(mime, "image/") || starts_with(mime, "audio/"))) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
     std::string filenameParam = req->getParameter("filename"); if (filenameParam.empty()) filenameParam = f.getFileName();
     std::string data(f.fileData(), f.fileLength());
-    const auto maxFile = karing::options::max_file_bytes(); if ((long long)data.size() > (long long)maxFile) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
+    const auto maxFile = options_state.max_file_bytes();
+    if ((long long)data.size() > (long long)maxFile) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
     if (!dao.update_file(id, filenameParam, mime, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     Json::Value dj; dj["id"] = id; return cb(karing::http::ok(dj));
   }
@@ -265,7 +271,8 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
 }
 
 void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   auto params = req->getParameters();
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
@@ -276,7 +283,7 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
     std::optional<std::string> content;
     if ((*json)["content"].isString()) {
       content = (*json)["content"].asString();
-      if ((long long)content->size() > (long long)karing::options::max_text_bytes()) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
+      if ((long long)content->size() > (long long)options_state.max_text_bytes()) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
     // Ignore syntax field
     if (!dao.patch_text(id, content)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
@@ -289,7 +296,7 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
     if (!files.empty()) {
       const auto& f = files.front();
       data = std::string(f.fileData(), f.fileLength());
-      if ((long long)data->size() > (long long)karing::options::max_file_bytes()) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
+      if ((long long)data->size() > (long long)options_state.max_file_bytes()) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
     }
     std::optional<std::string> filename, mime;
     if (auto p = req->getParameter("filename"); !p.empty()) filename = p;
@@ -305,7 +312,8 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
 }
 
 void karing_controller::delete_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   auto params = req->getParameters();
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
@@ -318,18 +326,19 @@ void karing_controller::delete_karing(const HttpRequestPtr& req, std::function<v
 // restore endpoint removed
 
 void karing_controller::health(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
-  dao::KaringDao dao(options::db_path());
+  auto& options_state = karing::options::runtime_options::instance();
+  dao::KaringDao dao(options_state.db_path());
   Json::Value out;
   out["status"] = "ok";
   out["version"] = KARING_VERSION;
-  out["db_path"] = options::db_path();
-  out["limit_build"] = karing::options::build_limit();
-  out["limit_runtime"] = karing::options::runtime_limit();
+  out["db_path"] = options_state.db_path();
+  out["limit_build"] = options_state.build_limit();
+  out["limit_runtime"] = options_state.runtime_limit();
   out["limit_max"] = KARING_MAX_LIMIT;
   // sizes
   Json::Value sizes(Json::objectValue);
-  sizes["max_file_bytes"] = karing::options::max_file_bytes();
-  sizes["max_text_bytes"] = karing::options::max_text_bytes();
+  sizes["max_file_bytes"] = options_state.max_file_bytes();
+  sizes["max_text_bytes"] = options_state.max_text_bytes();
   sizes["hard_file_bytes"] = KARING_HARD_MAX_FILE_BYTES;
   sizes["hard_text_bytes"] = KARING_HARD_MAX_TEXT_BYTES;
   // client_max_body_size from drogon config if present
@@ -342,15 +351,15 @@ void karing_controller::health(const HttpRequestPtr& req, std::function<void(con
   out["sizes"] = sizes;
   // tls
   Json::Value tls(Json::objectValue);
-  tls["enabled"] = karing::options::tls_enabled();
-  tls["require"] = karing::options::tls_require();
-  tls["https_port"] = karing::options::tls_https_port();
-  tls["http_port"] = karing::options::tls_http_port();
-  if (karing::options::tls_enabled()) {
-    tls["cert"] = karing::options::tls_cert_path();
+  tls["enabled"] = options_state.tls_enabled();
+  tls["require"] = options_state.tls_require();
+  tls["https_port"] = options_state.tls_https_port();
+  tls["http_port"] = options_state.tls_http_port();
+  if (options_state.tls_enabled()) {
+    tls["cert"] = options_state.tls_cert_path();
   }
   out["tls"] = tls;
-  out["base_path"] = karing::options::base_path();
+  out["base_path"] = options_state.base_path();
   // build info
   Json::Value build(Json::objectValue);
   build["type"] = KARING_BUILD_TYPE;
