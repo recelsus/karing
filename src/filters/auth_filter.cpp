@@ -59,7 +59,8 @@ static std::optional<std::string> get_api_key(const HttpRequestPtr& req) {
 void auth_filter::doFilter(const HttpRequestPtr& req,
                            drogon::FilterCallback&& fcb,
                            drogon::FilterChainCallback&& fccb) {
-  if (karing::options::no_auth()) return fccb();
+  auto& options_state = karing::options::runtime_options::instance();
+  if (options_state.no_auth()) return fccb();
 
   // Determine method class early to allow localhost read-only fast-path
   auto method = req->getMethod();
@@ -72,13 +73,13 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
   // Determine client IP with proxy chain handling
   std::string peer_ip = req->getPeerAddr().toIp();
   std::string client_ip = peer_ip;
-  if (karing::options::trust_proxy()) {
+  if (options_state.trust_proxy()) {
     std::vector<std::string> chain;
     auto xff = req->getHeader("x-forwarded-for");
     if (!xff.empty()) {
       size_t pos=0; while (pos<=xff.size()) { size_t q=xff.find(',', pos); if (q==std::string::npos) q=xff.size(); std::string token=xff.substr(pos,q-pos); pos=q+1; while(!token.empty()&&token.front()==' ') token.erase(token.begin()); while(!token.empty()&&token.back()==' ') token.pop_back(); if(!token.empty()) chain.push_back(token);} }
     chain.push_back(peer_ip);
-    const auto& trusted = karing::options::trusted_proxies();
+    const auto& trusted = options_state.trusted_proxies();
     if (!trusted.empty()) {
       for (int i=(int)chain.size()-1; i>=0; --i) { if (!ip_in_list(trusted, chain[(size_t)i])) { client_ip = chain[(size_t)i]; break; } }
       if (client_ip.empty()) client_ip = chain.front();
@@ -87,14 +88,14 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
   }
 
   // Open DB
-  sqlite3* db=nullptr; if (sqlite3_open_v2(karing::options::db_path().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) {
+  sqlite3* db=nullptr; if (sqlite3_open_v2(options_state.db_path().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr)!=SQLITE_OK) {
     // Return explicit JSON error to aid debugging
     auto resp = karing::http::error(HttpStatusCode::k500InternalServerError, "E_DB", "Database open failed");
     fcb(resp); if (db) sqlite3_close(db); return;
   }
 
   // Localhost fast-path (optional): only for read methods
-  if (karing::options::allow_localhost()) {
+  if (options_state.allow_localhost()) {
     bool is_loopback = (client_ip == "::1") || cidr_match("127.0.0.0/8", client_ip);
     if (is_loopback && !write_method) { if (db) sqlite3_close(db); return fccb(); }
   }

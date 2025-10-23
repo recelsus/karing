@@ -47,7 +47,7 @@ int KaringDao::insert_text(const std::string& content) {
     if (sqlite3_step(count_st) == SQLITE_ROW) active = sqlite3_column_int(count_st, 0);
   }
   if (count_st) sqlite3_finalize(count_st);
-  int limit = karing::options::runtime_limit();
+  int limit = karing::options::runtime_options::instance().runtime_limit();
   if (active < limit) {
     const char* sql =
         "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, revision, is_active)\n"
@@ -170,7 +170,7 @@ bool KaringDao::update_text(int id, const std::string& content) {
   int rc = sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   if (rc != SQLITE_DONE || sqlite3_changes(db) <= 0) { LOG_ERROR << "step/changes failed (update_text) rc=" << rc << ": " << sqlite3_errmsg(db); return false; }
-  trim_active_over_limit(db, karing::options::runtime_limit());
+  trim_active_over_limit(db, karing::options::runtime_options::instance().runtime_limit());
   return true;
 }
 
@@ -203,7 +203,7 @@ bool KaringDao::update_file(int id, const std::string& filename, const std::stri
   int rc = sqlite3_step(stmt);
   sqlite3_finalize(stmt);
   if (rc != SQLITE_DONE || sqlite3_changes(db) <= 0) { LOG_ERROR << "step/changes failed (update_file) rc=" << rc << ": " << sqlite3_errmsg(db); return false; }
-  trim_active_over_limit(db, karing::options::runtime_limit());
+  trim_active_over_limit(db, karing::options::runtime_options::instance().runtime_limit());
   return true;
 }
 
@@ -261,7 +261,7 @@ int KaringDao::insert_file(const std::string& filename,
     if (sqlite3_step(count_st) == SQLITE_ROW) active = sqlite3_column_int(count_st, 0);
   }
   if (count_st) sqlite3_finalize(count_st);
-  int limit = karing::options::runtime_limit();
+  int limit = karing::options::runtime_options::instance().runtime_limit();
   if (active < limit) {
     const char* sql =
         "INSERT INTO karing(content, is_file, filename, mime, content_blob, created_at, updated_at, revision, is_active)\n"

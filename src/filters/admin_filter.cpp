@@ -32,7 +32,8 @@ void admin_filter::doFilter(const HttpRequestPtr& req,
 
   // Validate key has admin role
   sqlite3* db = nullptr;
-  if (sqlite3_open_v2(karing::options::db_path().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
+  auto& options_state = karing::options::runtime_options::instance();
+  if (sqlite3_open_v2(options_state.db_path().c_str(), &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
     auto resp = karing::http::error(HttpStatusCode::k500InternalServerError, "E_DB", "Database open failed");
     fcb(resp);
     if (db) sqlite3_close(db);

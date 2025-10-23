@@ -7,7 +7,8 @@ namespace karing::filters {
 void hsts_filter::doFilter(const drogon::HttpRequestPtr& req,
                            drogon::FilterCallback&& fcb,
                            drogon::FilterChainCallback&& fccb) {
-  if (!(karing::options::tls_enabled())) return fccb();
+  auto& options_state = karing::options::runtime_options::instance();
+  if (!(options_state.tls_enabled())) return fccb();
   auto xfp = req->getHeader("x-forwarded-proto");
   bool https = (!xfp.empty() && (xfp=="https"||xfp=="HTTPS"));
   if (!https) return fccb();
