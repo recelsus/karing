@@ -12,7 +12,6 @@ public:
 
 private:
   bool has_flag(const std::string& flag) const;
-  std::optional<std::string> flag_value(const std::string& flag) const;
 
   bool wants_help() const;
   bool wants_version() const;
@@ -23,7 +22,6 @@ private:
   std::string normalize_ipv4_cidr(const std::string& input) const;
 
   std::optional<int> handle_new_interface() const;
-  std::optional<int> handle_legacy_interface() const;
 
   int argc_state;
   char** argv_state;
@@ -31,4 +29,3 @@ private:
 };
 
 }  // namespace karing::app
-

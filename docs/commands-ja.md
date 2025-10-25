@@ -22,16 +22,28 @@
 
 API キー管理（CLI）
 - 一覧表示
-  - `./build/karing --show-api-keys`
-- 追加
-  - `./build/karing --api-key-add YOUR_KEY --label dev --role write`
-- 有効化/無効化
-  - `./build/karing --api-key-enable YOUR_KEY`
-  - `./build/karing --api-key-disable YOUR_KEY`
-- ロール変更
-  - `./build/karing --api-key-set-role YOUR_KEY --role read`
+  - `./build/karing keys list --data ./karing.db`
+- 追加（シークレット自動生成）
+  - `./build/karing keys add --label dev --role write --data ./karing.db`
+- JSON 形式での追加結果
+  - `./build/karing keys add --json --data ./karing.db`
+- 有効化/無効化（ID 指定）
+  - `./build/karing keys disable 1 --data ./karing.db`
+  - `./build/karing keys enable 1 --data ./karing.db`
+- ロール/ラベル変更
+  - `./build/karing keys set-role 1 read --data ./karing.db`
+  - `./build/karing keys set-label 1 backend --data ./karing.db`
 - 削除
-  - `./build/karing --api-key-delete YOUR_KEY`
+  - `./build/karing keys rm 1 --hard --data ./karing.db`
+
+IP 制御リスト（CLI）
+- 一覧表示
+  - `./build/karing ip list --data ./karing.db`
+  - `./build/karing ip list deny --data ./karing.db`
+- 追加
+  - `./build/karing ip add 10.0.0.5/24 allow --data ./karing.db`
+- 削除
+  - `./build/karing ip del allow:3 --data ./karing.db`
 
 ヘルス/基本操作（curl）
 - ヘルス
