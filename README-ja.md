@@ -35,27 +35,21 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 設定
 ----
 
-- 設定ファイル: Drogon 互換 JSON（`karing.json`）
-- 探索順（後ろはフォールバック）:
-  - `--config <path>` / `KARING_CONFIG`
-  - `$XDG_CONFIG_HOME/karing/karing.json`
-  - `~/.config/karing/karing.json`
-  - `/etc/karing/karing.json`（POSIX）
-  - `config/karing.json`（同梱デフォルト）
-- Windows
-  - 設定: `%APPDATA%\karing\karing.json`
-  - 既定 DB: `%LOCALAPPDATA%\karing\karing.db`
-- 環境変数が設定を上書き可能（`KARING_BASE_PATH`, `KARING_LIMIT` など）。詳細は `docs/config-ja.md`。
-- 優先度（実行時）: `--config` / `KARING_CONFIG` > ユーザー設定（`$XDG_CONFIG_HOME/karing/karing.json` または `~/.config/karing/karing.json`）> システム（`/etc/karing/karing.json`）> 同梱 `config/karing.json` > 組込みデフォルト。
-  - このアプリは特権（sudo）を要求しない前提のため、既定の設定場所は `/etc` ではなくユーザー設定（`~/.config/karing`）です。Docker イメージでは `/root/.config/karing/karing.json` に配置します。
-- 初回起動: ユーザー設定が未作成の場合、採用された設定をユーザー設定パスにコピーして永続化します。
+- バイナリは `0.0.0.0:8080`, limit=100, `./logs` などのデフォルトを内蔵しており、設定ファイルなしで起動できます。
+- 設定ファイル（任意）: `--config /path/to/karing.json` を指定した場合のみ Drogon 互換 JSON を読み込みます。テンプレートは `config/karing.json` に同梱され、`make install` では `${prefix}/etc/karing/karing.json` に配置されます（使用時は常に `--config` を渡してください）。既定の階層に存在しないキーは無視され、記述した項目のみ上書きされます。
+- 優先度: 組込みデフォルト < 設定ファイル (`--config`) < 環境変数 < 実行時オプション。設定ファイルを読み込んでも、対応する環境変数やCLI引数があればそちらが優先されます。
 - 既定パス（XDG 準拠）:
-  - DB: `$XDG_DATA_HOME/karing/karing.db`（未設定時は `~/.local/share/karing/karing.db`）。
-  - ログ: `$XDG_STATE_HOME/karing/logs`（未設定時は `~/.local/state/karing/logs`）。
-  - 設定ファイル側で絶対パスを明示した場合は、その指定を優先します。
- - 環境変数ショートカット:
-   - `KARING_DATA` は DB の絶対パスを指定（XDG/設定より優先）。
-   - `KARING_LOG_PATH` はログディレクトリを指定（XDG/設定より優先）。
+  - DB: `$XDG_DATA_HOME/karing/karing.db` または `~/.local/share/karing/karing.db`
+  - ログ: `$XDG_STATE_HOME/karing/logs` または `~/.local/state/karing/logs`
+  - どちらも得られない場合は実行ファイルと同じディレクトリ
+- Windows
+  - 既定 DB: `%LOCALAPPDATA%\karing\karing.db`
+- 環境変数の例:
+  - パス系: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_BASE_PATH`
+  - 制限系: `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`
+  - フラグ: `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`
+- 詳細は `docs/config-ja.md` を参照
+
 
 エンドポイント
 --------------
@@ -158,7 +152,7 @@ cmake --build build -j
 cmake --install build --prefix /usr/local
 ```
 - バイナリ: `${prefix}/bin/karing`
-- 既定設定: `${prefix}/etc/karing/karing.json`
+- サンプル設定: `${prefix}/etc/karing/karing.json`（利用時は `--config` で指定）
 
 配布物（バイナリ / Docker）
 ---------------------------
@@ -166,7 +160,8 @@ cmake --install build --prefix /usr/local
 - バイナリ: Release（タグ v*）に添付 / Actions の Artifacts から取得可能
   - ファイル名: `karing-ubuntu`（Linux）, `karing-macos`（macOS）
 - Docker: GHCR `ghcr.io/recelsus/karing`（branch/sha/semver タグ）
-  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
+  - コンテナは以下の環境変数を認識: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
+  - `--config` を使う場合は設定ファイルをバインドマウントし、`--config /etc/karing/karing.json` のように明示的に渡してください。
   - Dockerfile 既定: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing`（`-e` または compose の `environment:` で上書き可）
 
 ドキュメント

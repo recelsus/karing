@@ -27,7 +27,7 @@ sudo make install
 ```
 
 Windows
-- Build with MSVC and vcpkg (TBD). The app probes `%APPDATA%` and `%LOCALAPPDATA%` for config/data paths.
+- Build with MSVC and vcpkg (TBD). The app uses `%LOCALAPPDATA%` for the default DB path; pass `--config` if you need a Drogon JSON file.
 
 Dev builds
 ```bash

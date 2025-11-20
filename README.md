@@ -38,27 +38,18 @@ Quick Start
 Configuration
 -------------
 
-- Config file format: Drogon‑compatible JSON (named `karing.json`)
-- Discovery order (later ones are fallbacks):
-  - `--config <path>` or `KARING_CONFIG`
-  - `$XDG_CONFIG_HOME/karing/karing.json`
-  - `~/.config/karing/karing.json`
-  - `/etc/karing/karing.json` (POSIX)
-  - `config/karing.json` (bundled default)
-- Windows paths
-  - Config: `%APPDATA%\karing\karing.json`
-  - DB default: `%LOCALAPPDATA%\karing\karing.db`
-- Environment variables override config (e.g., `KARING_BASE_PATH`, `KARING_LIMIT`, etc.)
-- Precedence (runtime): `--config`/`KARING_CONFIG` > user config (`$XDG_CONFIG_HOME/karing/karing.json` or `~/.config/karing/karing.json`) > system (`/etc/karing/karing.json`) > bundled `config/karing.json` > embedded default.
- - Note: This app does not require privileged write access; default config location is user config (`~/.config/karing`), not `/etc`. Docker image places the default config at `/root/.config/karing/karing.json`.
-- First run: when no user config exists, the selected config is copied into the user config path for future runs.
+- Built-in defaults keep the binary runnable without any files: listens on `0.0.0.0:8080`, limit 100, logs in `./logs`, and the SQLite file is created next to the binary (or the XDG locations below when available).
+- Config file (optional): pass `--config /path/to/karing.json` to load a Drogon-compatible JSON. A sample lives at `config/karing.json`; `make install` also drops it at `${prefix}/etc/karing/karing.json`. Only the provided keys override defaults (unknown keys are ignored), so you can keep the file minimal.
+- Runtime precedence per field: compiled defaults < config file (`--config`) < environment variables < CLI flags. CLI overrides such as `--port`/`--tls` always win.
 - Defaults (XDG):
-  - DB: `$XDG_DATA_HOME/karing/karing.db` or `~/.local/share/karing/karing.db` if `XDG_DATA_HOME` is unset.
+  - DB: `$XDG_DATA_HOME/karing/karing.db` or `~/.local/share/karing/karing.db` if `XDG_DATA_HOME` is unset. When both fail, `karing.db` is created next to the executable.
   - Logs: `$XDG_STATE_HOME/karing/logs` or `~/.local/state/karing/logs` if `XDG_STATE_HOME` is unset.
-  - If the config file explicitly sets absolute paths, those take precedence.
- - Env shortcuts:
-   - `KARING_DATA` sets the absolute DB path (overrides XDG and config).
-   - `KARING_LOG_PATH` sets the log directory (overrides XDG and config).
+- Windows paths
+  - DB default: `%LOCALAPPDATA%\karing\karing.db`
+- Env shortcuts:
+  - Paths: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_BASE_PATH`
+  - Limits: `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`
+  - Flags: `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`
 - Details: see `docs/config.md`.
 
 Endpoints
@@ -163,7 +154,7 @@ Install (make install)
   make -j
   sudo make install
   ```
-- Installs binary to `${prefix}/bin/karing` and default config to `${prefix}/etc/karing/karing.json`.
+- Installs binary to `${prefix}/bin/karing` and a sample config to `${prefix}/etc/karing/karing.json` (load it with `--config`).
 
 Binaries and Docker
 -------------------
@@ -173,7 +164,8 @@ Binaries and Docker
   - Filenames: `karing-ubuntu` (Linux), `karing-macos` (macOS).
 - Docker
   - Published to GHCR by CI: `ghcr.io/recelsus/karing` with tags for branch/sha/semver.
-  - Container respects env vars: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`.
+  - Container respects env vars: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`.
+  - To use a JSON config, bind-mount it into the container (e.g., `/etc/karing/karing.json`) and append `--config /etc/karing/karing.json` to the run command.
   - Defaults baked in Dockerfile: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing` (override with `-e` or compose `environment:`).
 
 Docs

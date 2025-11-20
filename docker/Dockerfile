@@ -37,15 +37,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libuuid1 \
     sqlite3 && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /root/.config/karing /var/lib/karing /var/log/karing
+    mkdir -p /var/lib/karing /var/log/karing /etc/karing
 COPY --from=builder /opt/runtime/lib/ /usr/local/lib/
 RUN echo /usr/local/lib > /etc/ld.so.conf.d/karing-local.conf && ldconfig
 COPY --from=builder /src/build/karing /usr/local/bin/karing
-COPY config/karing.json /root/.config/karing/karing.json
 EXPOSE 8080
 VOLUME ["/var/lib/karing", "/var/log/karing"]
 ENTRYPOINT ["/usr/local/bin/karing"]
 # Environment variable overrides supported by the app:
-# KARING_CONFIG, KARING_DATA, KARING_LIMIT, KARING_MAX_FILE_BYTES,
+# KARING_DATA, KARING_LOG_PATH, KARING_LIMIT, KARING_MAX_FILE_BYTES,
 # KARING_MAX_TEXT_BYTES, KARING_NO_AUTH, KARING_TRUSTED_PROXY,
 # KARING_ALLOW_LOCALHOST, KARING_BASE_PATH

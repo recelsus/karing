@@ -8,11 +8,9 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <algorithm>
 #include <cctype>
-#include <optional>
-#include <sqlite3.h>
+#include <memory>
 #if defined(__linux__)
 #include <unistd.h>
 #endif
@@ -22,17 +20,109 @@
 #include "db/db_init.h"
 #include "db/db_introspection.h"
 #include "utils/embedded_config.h"
-#include "dao/karing_dao.h"
 #include "utils/options.h"
 #include "utils/limits.h"
-#include "controllers/karing_controller.h"
-#include "controllers/health_controller.h"
 
 #if defined(KARING_BUILD_LIMIT) && defined(KARING_MAX_LIMIT)
 #if KARING_BUILD_LIMIT > KARING_MAX_LIMIT
 #error "KARING_BUILD_LIMIT must be <= KARING_MAX_LIMIT (100)"
 #endif
 #endif
+
+namespace {
+
+bool parse_json_string(const std::string& content,
+                       Json::Value& out,
+                       const std::string& label) {
+  Json::CharReaderBuilder builder;
+  builder["collectComments"] = false;
+  std::string errs;
+  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+  if (!reader->parse(content.data(), content.data() + content.size(), &out, &errs)) {
+    LOG_ERROR << "Failed to parse " << label << ": " << errs;
+    return false;
+  }
+  return true;
+}
+
+bool parse_json_file(const std::filesystem::path& path, Json::Value& out) {
+  std::ifstream ifs(path.string());
+  if (!ifs.is_open()) {
+    LOG_ERROR << "Failed to open config file '" << path.string() << "'";
+    return false;
+  }
+  Json::CharReaderBuilder builder;
+  builder["collectComments"] = false;
+  std::string errs;
+  if (!Json::parseFromStream(builder, ifs, &out, &errs)) {
+    LOG_ERROR << "Failed to parse config file '" << path.string() << "': " << errs;
+    return false;
+  }
+  return true;
+}
+
+void merge_known(Json::Value& base,
+                 const Json::Value& overrides,
+                 const std::string& path = std::string()) {
+  if (!base.isObject() || !overrides.isObject()) {
+    LOG_WARN << "Ignoring overrides for '" << path << "' due to type mismatch";
+    return;
+  }
+  for (const auto& key : overrides.getMemberNames()) {
+    const std::string current_path = path.empty() ? key : path + "." + key;
+    if (!base.isMember(key)) {
+      LOG_WARN << "Ignoring unknown config key '" << current_path << "'";
+      continue;
+    }
+    auto& target = base[key];
+    const auto& incoming = overrides[key];
+    if (target.isObject()) {
+      if (!incoming.isObject()) {
+        LOG_WARN << "Expected object at '" << current_path << "'";
+        continue;
+      }
+      merge_known(target, incoming, current_path);
+    } else if (target.isArray()) {
+      if (!incoming.isArray()) {
+        LOG_WARN << "Expected array at '" << current_path << "'";
+        continue;
+      }
+      target = incoming;
+    } else if (target.isBool()) {
+      if (!incoming.isBool()) {
+        LOG_WARN << "Expected boolean at '" << current_path << "'";
+        continue;
+      }
+      target = incoming;
+    } else if (target.isString()) {
+      if (!incoming.isString()) {
+        LOG_WARN << "Expected string at '" << current_path << "'";
+        continue;
+      }
+      target = incoming;
+    } else if (target.isIntegral()) {
+      if (!incoming.isIntegral()) {
+        LOG_WARN << "Expected integer at '" << current_path << "'";
+        continue;
+      }
+      target = incoming;
+    } else if (target.isNumeric()) {
+      if (!incoming.isNumeric()) {
+        LOG_WARN << "Expected number at '" << current_path << "'";
+        continue;
+      }
+      target = incoming;
+    } else {
+      if (incoming.isNull()) {
+        LOG_WARN << "Ignoring null override at '" << current_path << "'";
+        continue;
+      }
+      target = incoming;
+    }
+  }
+}
+
+}  // namespace
 
 namespace karing::app {
 
@@ -58,8 +148,11 @@ int bootstrap::execute() {
   bool trust_proxy_flag = false;
   bool allow_localhost_flag = false;
   std::string base_path_override;
+  Json::Value drogon_config;
+  if (!parse_json_string(karing::config::drogon_default_json(), drogon_config, "embedded config")) {
+    return 1;
+  }
 
-  if (const char* env = std::getenv("KARING_CONFIG"); env && *env) config_path = env;
   if (const char* env = std::getenv("KARING_DATA"); env && *env) data_file = env;
   if (const char* env = std::getenv("KARING_LIMIT"); env && *env) {
     try { limit_override = std::stoi(env); } catch (...) {}
@@ -116,35 +209,11 @@ int bootstrap::execute() {
     }
   }
 
-  bool using_bundled_config = false;
-  fs::path config_absolute;
   if (!config_path.empty()) {
-    config_absolute = fs::absolute(config_path);
-  } else {
-    fs::path cfg_home;
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) cfg_home = fs::path(xdg);
-    else if (const char* home = std::getenv("HOME"); home && *home) cfg_home = fs::path(home) / ".config";
-    if (!cfg_home.empty()) {
-      fs::path xdg_cfg = cfg_home / "karing" / "karing.json";
-      if (fs::exists(xdg_cfg)) config_absolute = fs::absolute(xdg_cfg);
-    }
-#if defined(_WIN32)
-    if (config_absolute.empty()) {
-      if (const char* appdata = std::getenv("APPDATA"); appdata && *appdata) {
-        fs::path win_cfg = fs::path(appdata) / "karing" / "karing.json";
-        if (fs::exists(win_cfg)) config_absolute = fs::absolute(win_cfg);
-      }
-    }
-#else
-    if (config_absolute.empty()) {
-      fs::path etc_cfg = fs::path("/etc") / "karing" / "karing.json";
-      if (fs::exists(etc_cfg)) config_absolute = fs::absolute(etc_cfg);
-    }
-#endif
-    if (config_absolute.empty()) {
-      fs::path bundled = fs::absolute("config/karing.json");
-      if (fs::exists(bundled)) { config_absolute = bundled; using_bundled_config = true; }
-    }
+    fs::path config_full = fs::absolute(config_path);
+    Json::Value overrides;
+    if (!parse_json_file(config_full, overrides)) return 1;
+    merge_known(drogon_config, overrides);
   }
 
   if (data_file.empty()) {
@@ -216,92 +285,56 @@ int bootstrap::execute() {
     if (auto cli_exit = dispatcher.run(); cli_exit.has_value()) return *cli_exit;
   }
 
-  if (config_absolute.empty()) {
-    std::string json_content;
-    if (port_override > 0 || tls_enable) {
-      int port = port_override > 0 ? port_override : 8080;
-      if (tls_enable) {
-        int http_port = (port_override > 0 ? 0 : 8080);
-        json_content = karing::config::drogon_build_config_json_tls(port, true,
-                                                                    tls_cert.empty() ? "server.crt" : tls_cert,
-                                                                    tls_key.empty() ? "server.key" : tls_key,
-                                                                    http_port,
-                                                                    require_tls);
-        options_state.set_tls(true, require_tls, port, http_port);
-        options_state.set_tls_cert_paths(tls_cert, tls_key);
-      } else {
-        json_content = karing::config::drogon_build_config_json(port);
-        options_state.set_tls(false, false, 0, port);
+  if (tls_enable || port_override > 0) {
+    if (tls_enable) {
+      int https_port = port_override > 0 ? port_override : 8080;
+      int http_port = (port_override > 0 ? 0 : 8080);
+      Json::Value listeners(Json::arrayValue);
+      Json::Value https_listener(Json::objectValue);
+      https_listener["address"] = "0.0.0.0";
+      https_listener["port"] = https_port;
+      https_listener["https"] = true;
+      https_listener["cert"] = tls_cert.empty() ? "server.crt" : tls_cert;
+      https_listener["key"] = tls_key.empty() ? "server.key" : tls_key;
+      listeners.append(https_listener);
+      if (http_port > 0) {
+        Json::Value http_listener(Json::objectValue);
+        http_listener["address"] = "0.0.0.0";
+        http_listener["port"] = http_port;
+        http_listener["https"] = false;
+        listeners.append(http_listener);
+      }
+      drogon_config["listeners"] = listeners;
+      if (drogon_config.isMember("app") && drogon_config["app"].isObject()) {
+        drogon_config["app"]["require_tls"] = require_tls;
       }
     } else {
-      json_content = karing::config::drogon_default_json();
-      options_state.set_tls(false, false, 0, 8080);
-    }
-
-    const std::string embedded_path = (fs::current_path() / "drogon.embedded.json").string();
-    {
-      std::ofstream ofs(embedded_path);
-      if (!ofs.is_open()) {
-        LOG_ERROR << "Failed to open '" << embedded_path << "' for writing";
-        return 1;
-      }
-      ofs << json_content;
-      if (!ofs.good()) {
-        LOG_ERROR << "Failed to write embedded config to '" << embedded_path << "'";
-        return 1;
-      }
-    }
-    config_absolute = fs::absolute(embedded_path);
-
-    fs::path user_cfg;
-#if defined(_WIN32)
-    if (const char* appdata = std::getenv("APPDATA"); appdata && *appdata) {
-      user_cfg = fs::path(appdata) / "karing" / "karing.json";
-    }
-#else
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
-      user_cfg = fs::path(xdg) / "karing" / "karing.json";
-    } else if (const char* home = std::getenv("HOME"); home && *home) {
-      user_cfg = fs::path(home) / ".config" / "karing" / "karing.json";
-    }
-#endif
-    if (!user_cfg.empty()) {
-      std::error_code ec;
-      fs::create_directories(user_cfg.parent_path(), ec);
-      if (ec) {
-        LOG_WARN << "Could not create user config directory '" << user_cfg.parent_path().string() << "': " << ec.message();
-      } else if (!fs::exists(user_cfg)) {
-        std::ofstream ucfg(user_cfg.string());
-        if (!ucfg.is_open()) {
-          LOG_WARN << "Could not open user config file '" << user_cfg.string() << "' for writing";
-        } else {
-          ucfg << json_content;
-          if (!ucfg.good()) LOG_WARN << "Failed while writing user config to '" << user_cfg.string() << "'";
-        }
+      int port = port_override > 0 ? port_override : 8080;
+      Json::Value listeners(Json::arrayValue);
+      Json::Value listener(Json::objectValue);
+      listener["address"] = "0.0.0.0";
+      listener["port"] = port;
+      listener["https"] = false;
+      listeners.append(listener);
+      drogon_config["listeners"] = listeners;
+      if (drogon_config.isMember("app") && drogon_config["app"].isObject()) {
+        drogon_config["app"]["require_tls"] = false;
       }
     }
   }
 
   try { fs::create_directories("logs"); } catch (...) {}
-  drogon::app().loadConfigFile(config_absolute.string());
+  drogon::app().loadConfigJson(drogon_config);
   if (const char* env_log = std::getenv("KARING_LOG_PATH"); env_log && *env_log) {
     try { fs::create_directories(env_log); } catch (...) {}
     drogon::app().setLogPath(env_log);
   }
   try {
     std::string configured_log;
-    {
-      std::ifstream ifs(config_absolute.string());
-      if (ifs) {
-        Json::CharReaderBuilder b;
-        Json::Value root;
-        std::string errs;
-        if (Json::parseFromStream(b, ifs, &root, &errs)) {
-          if (root.isMember("log") && root["log"].isMember("log_path") && root["log"]["log_path"].isString()) {
-            configured_log = root["log"]["log_path"].asString();
-          }
-        }
-      }
+    if (drogon_config.isMember("log") &&
+        drogon_config["log"].isMember("log_path") &&
+        drogon_config["log"]["log_path"].isString()) {
+      configured_log = drogon_config["log"]["log_path"].asString();
     }
     bool need_override = configured_log.empty();
 #if !defined(_WIN32)
@@ -324,38 +357,42 @@ int bootstrap::execute() {
   } catch (...) {}
 
   {
-#if defined(_WIN32)
-    fs::path user_cfg;
-    if (const char* appdata = std::getenv("APPDATA"); appdata && *appdata) {
-      user_cfg = fs::path(appdata) / "karing" / "karing.json";
+    bool require_tls_config = false;
+    if (drogon_config.isMember("app") &&
+        drogon_config["app"].isMember("require_tls") &&
+        drogon_config["app"]["require_tls"].isBool()) {
+      require_tls_config = drogon_config["app"]["require_tls"].asBool();
     }
-#else
-    fs::path user_cfg;
-    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
-      user_cfg = fs::path(xdg) / "karing" / "karing.json";
-    } else if (const char* home = std::getenv("HOME"); home && *home) {
-      user_cfg = fs::path(home) / ".config" / "karing" / "karing.json";
-    }
-#endif
-    if (!user_cfg.empty()) {
-      std::error_code ec;
-      fs::create_directories(user_cfg.parent_path(), ec);
-      if (!fs::exists(user_cfg)) {
-        try { fs::copy_file(config_absolute, user_cfg, fs::copy_options::none, ec); } catch (...) {}
+    int https_port = 0;
+    int http_port = 0;
+    std::string cert_path;
+    std::string key_path;
+    if (drogon_config.isMember("listeners") && drogon_config["listeners"].isArray()) {
+      for (const auto& listener : drogon_config["listeners"]) {
+        if (!listener.isObject()) continue;
+        bool is_https = listener.isMember("https") && listener["https"].asBool();
+        int port = 0;
+        if (listener.isMember("port")) {
+          if (listener["port"].isInt()) port = listener["port"].asInt();
+          else if (listener["port"].isUInt()) port = static_cast<int>(listener["port"].asUInt());
+        }
+        if (is_https) {
+          if (https_port == 0 && port > 0) https_port = port;
+          if (listener.isMember("cert") && listener["cert"].isString()) cert_path = listener["cert"].asString();
+          if (listener.isMember("key") && listener["key"].isString()) key_path = listener["key"].asString();
+        } else {
+          if (http_port == 0 && port > 0) http_port = port;
+        }
       }
     }
+    options_state.set_tls(https_port > 0, require_tls_config, https_port, http_port);
+    options_state.set_tls_cert_paths(cert_path, key_path);
   }
 
   try {
     auto cfg = drogon::app().getCustomConfig();
     if (cfg.isMember("karing") && cfg["karing"].isMember("base_path") && cfg["karing"]["base_path"].isString()) {
       options_state.set_base_path(cfg["karing"]["base_path"].asString());
-    }
-    if (cfg.isMember("app") && cfg["app"].isMember("require_tls") && cfg["app"]["require_tls"].isBool()) {
-      options_state.set_tls(options_state.tls_enabled(),
-                            cfg["app"]["require_tls"].asBool(),
-                            options_state.tls_https_port(),
-                            options_state.tls_http_port());
     }
     std::vector<std::string> proxies;
     auto collect = [&](const Json::Value& v) {
@@ -391,16 +428,10 @@ int bootstrap::execute() {
   } catch (...) {}
   if (limit_value == 100) {
     try {
-      std::ifstream ifs(config_absolute.string());
-      if (ifs) {
-        Json::CharReaderBuilder b;
-        Json::Value root;
-        std::string errs;
-        if (Json::parseFromStream(b, ifs, &root, &errs)) {
-          if (root.isMember("karing") && root["karing"].isMember("limit") && root["karing"]["limit"].isInt()) {
-            limit_value = root["karing"]["limit"].asInt();
-          }
-        }
+      if (drogon_config.isMember("karing") &&
+          drogon_config["karing"].isMember("limit") &&
+          drogon_config["karing"]["limit"].isInt()) {
+        limit_value = drogon_config["karing"]["limit"].asInt();
       }
     } catch (...) {}
   }
@@ -463,17 +494,11 @@ int bootstrap::execute() {
   } catch (...) {}
   if (shown_port == 0) {
     try {
-      std::ifstream ifs(config_absolute.string());
-      if (ifs) {
-        Json::CharReaderBuilder b;
-        Json::Value root;
-        std::string errs;
-        if (Json::parseFromStream(b, ifs, &root, &errs)) {
-          if (root.isMember("listeners") && root["listeners"].isArray() && !root["listeners"].empty()) {
-            const auto& l0 = root["listeners"][0U];
-            if (l0.isMember("port") && l0["port"].isInt()) shown_port = l0["port"].asInt();
-          }
-        }
+      if (drogon_config.isMember("listeners") &&
+          drogon_config["listeners"].isArray() &&
+          !drogon_config["listeners"].empty()) {
+        const auto& l0 = drogon_config["listeners"][0U];
+        if (l0.isMember("port") && l0["port"].isInt()) shown_port = l0["port"].asInt();
       }
     } catch (...) {}
   }
@@ -522,4 +547,3 @@ int bootstrap::execute() {
 }
 
 }  // namespace karing::app
-

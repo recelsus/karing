@@ -53,4 +53,5 @@ exec docker run --rm \
   ${KARING_DISABLE_FTS:+-e KARING_DISABLE_FTS=$KARING_DISABLE_FTS} \
   -e KARING_NO_AUTH=0 \
   -e KARING_ALLOW_LOCALHOST=1 \
-  "$IMAGE_TAG"
+  "$IMAGE_TAG" \
+  --config /etc/karing/karing.json

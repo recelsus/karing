@@ -61,8 +61,11 @@ IP 制御リスト（CLI）
 DB/設定
 - DB/上限の確認だけして終了
   - `./build/karing --check-db`
-- 設定ファイルの探索順（優先）
-  - `--config`/`KARING_CONFIG` > `$XDG_CONFIG_HOME/karing/karing.json` > `~/.config/karing/karing.json` > `/etc/karing/karing.json` > `config/karing.json`
+- 設定ファイルの読み込み
+  - `--config /path/to/karing.json` を指定したときのみ読み込み（例: `./build/karing --config config/karing.json`）
+- 優先度
+  - 組込みデフォルト < 設定ファイル (`--config`) < 環境変数 < 実行時オプション
+- `--config` に存在しないキーは無視され、既存項目のみ上書き
 - DB 既定パス
   - `$XDG_DATA_HOME/karing/karing.db` / `~/.local/share/karing/karing.db`
 

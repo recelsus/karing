@@ -1,5 +1,4 @@
 #include "embedded_config.h"
-#include "embedded_user_json.h"
 
 namespace karing::config {
 
@@ -32,15 +31,10 @@ static std::string build_with_port(int port) {
 })JSON");
 }
 
-static std::string kEmbedded = [](){
-#if KARING_EMBED_HAVE_USER_JSON
-  return std::string(KARING_EMBED_USER_JSON);
-#else
-  return build_with_port(8080);
-#endif
-}();
-
-const std::string& drogon_default_json() { return kEmbedded; }
+const std::string& drogon_default_json() {
+  static const std::string kEmbedded = build_with_port(8080);
+  return kEmbedded;
+}
 std::string drogon_build_config_json(int port) { return build_with_port(port); }
 
 std::string drogon_build_config_json_tls(int https_port, bool https,
