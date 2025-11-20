@@ -67,23 +67,22 @@ Endpoints
   - `q` — FTS5 query (text: content, file: filename)
   - `type` — `text` | `file` (optional filter)
   - Response: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
-  - Auth: `GET /search` is allowed for read; `POST /search` is also treated as a read operation (no write role required).
+  - Auth: `GET /search` is open to user-level keys; `POST /search` is also treated as read-only (no admin role required).
 
 Notes
 - Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/search`.
-- Auth: API key via `X-API-Key` or `?api_key=`, role‑based (read/write/admin). See `docs/config.md`.
+- Auth: API key via `X-API-Key` or `?api_key=`, role‑based (user/admin). See `docs/config.md`.
 
 Auth Policy
 -----------
 
-- Role hierarchy: `read < write < admin`.
-- IP precedence:
+- Role hierarchy: `user < admin`.
+- IP precedence (`ip_rules` permission column):
   - `deny` match → always reject (even with a valid API key).
   - `allow` match → bypass auth (accepted regardless of API key).
   - neither → require API key with sufficient role.
 - Required roles by endpoint:
-  - `GET /`, `GET /health`, `GET/POST /search` → `read` or higher
-  - `POST /`, `PUT/PATCH/DELETE /` → `write` or higher
+  - `GET /`, `GET /health`, `GET/POST /search`, `POST /`, `PUT/PATCH/DELETE /` → `user` or `admin`
   - `GET /admin/auth` → `admin` (unless IP allow bypass applies)
 
 Admin CLI (API Keys & IP Control)
@@ -92,26 +91,26 @@ Admin CLI (API Keys & IP Control)
 API key management and IP allow/deny lists can be managed via the `karing` CLI.
 
 - API keys
-  - `karing keys add --label "CI from repo A"`                   # Auto-generate and add an API key. Default role=write; attach label
+  - `karing keys add --label "CI from repo A"`                   # Auto-generate and add an API key. Default role=user; attach label
   - `karing keys add --role admin --label "ops emergency"`       # Generate an admin key (role=admin)
   - `karing keys add --disabled --label "staged key"`            # Generate but start disabled (pre-rollout staging)
-  - `karing keys set-role 42 admin`                               # Update existing key (id=42) role: write/read → admin
+  - `karing keys set-role 42 user`                                # Downgrade existing key (id=42) to user role
+  - `karing keys set-role 42 admin`                               # Promote existing key (id=42) to admin
   - `karing keys set-label 42 "CI from repo B"`                   # Update label for existing key (id=42)
   - `karing keys disable 42`                                      # Disable existing key (enabled=0), reversible
   - `karing keys enable 42`                                       # Re-enable a previously disabled key (enabled=1)
   - `karing keys rm 42`                                           # Remove key (logical by default; use --hard for physical delete)
   - `karing keys rm 42 --hard`                                    # Physically delete key (fully removed from DB)
   - `karing keys add --label "will show secret once" --json`      # Output result as JSON; secret is shown only on creation
-    # → {"id":..., "role":"write","label":"...","enabled":1,"secret":"..."}
+    # → {"id":..., "role":"user","label":"...","enabled":1,"secret":"..."}
 
-- IP allow/deny
-  - `karing ip add 203.0.113.0/24 allow`                          # Add CIDR to allow list (stored as-is)
-  - `karing ip add 203.0.113.10 deny`                             # Add a single IPv4 to deny list
+- IP rules (single table with `permission=allow|deny`)
+  - `karing ip add 203.0.113.0/24 allow`                          # Add CIDR to allow rules (stored normalized)
+  - `karing ip add 203.0.113.10 deny`                             # Add a single IPv4 to deny rules
   - `karing ip add 192.168.1.5/24 allow`                          # Host/prefix format is normalized to network address (192.168.1.0/24)
-  - `karing ip rm allow:12`                                       # Remove id=12 from allow table (physical delete; prefer disable for soft ops)
-  - `karing ip rm deny:7`                                         # Remove id=7 from deny table
-  - `karing ip add 203.0.113.10/32 deny`                          # Overlaps with existing allow 203.0.113.0/24, still allowed to add
-    # At evaluation time, the most specific prefix wins; this /32 deny takes precedence
+  - `karing ip del 12`                                            # Remove rule id=12 (prefix `allow:` or `deny:` also accepted)
+  - `karing ip add 203.0.113.10/32 deny`                          # Overlaps with allow entries; deny wins at evaluation
+    # At evaluation time, the most specific prefix still wins; this /32 deny takes precedence
 
 Admin Endpoints
 ---------------
@@ -122,13 +121,15 @@ Admin Endpoints
     ```json
     {
       "api_keys": [
-        {"id":1,"key":"...","label":"...","enabled":true,"role":"write","created_at":...,"last_used_at":...,"last_ip":"..."}
+        {"id":1,"key":"...","label":"...","enabled":true,"role":"user","created_at":...,"last_used_at":...,"last_ip":"..."}
       ],
-      "ip_allow": [ {"id":12, "cidr":"203.0.113.0/24", "enabled":true, "created_at":...} ],
-      "ip_deny":  [ {"id":7,  "cidr":"203.0.113.10/32", "enabled":true, "created_at":...} ]
+      "ip_rules": [
+        {"id":12, "pattern":"203.0.113.0/24", "permission":"allow", "enabled":true, "created_at":...},
+        {"id":13, "pattern":"203.0.113.10/32", "permission":"deny", "enabled":true, "created_at":...}
+      ]
     }
     ```
-  - Use the `id` values with `karing ip rm allow:<id>` / `deny:<id>`.
+  - Use the `id` values with `karing ip del <id>` (prefixes like `allow:<id>` remain accepted for backward compatibility).
 
 Response format
 ---------------

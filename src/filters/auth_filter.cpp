@@ -12,14 +12,25 @@ using drogon::HttpStatusCode;
 
 namespace karing::filters {
 
-static std::vector<std::string> load_cidrs(sqlite3* db, const char* table) {
-  std::vector<std::string> v;
-  std::string sqlStr = std::string("SELECT cidr FROM ") + table + " WHERE enabled=1;";
-  const char* sql = sqlStr.c_str();
+struct ip_rule_entry {
+  std::string pattern;
+  bool allow;
+};
+
+static std::vector<ip_rule_entry> load_ip_rules(sqlite3* db) {
+  std::vector<ip_rule_entry> v;
+  const char* sql = "SELECT pattern, permission FROM ip_rules WHERE enabled=1;";
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-      if (const unsigned char* t = sqlite3_column_text(stmt, 0)) v.emplace_back(reinterpret_cast<const char*>(t));
+      ip_rule_entry entry;
+      if (const unsigned char* t = sqlite3_column_text(stmt, 0)) entry.pattern = reinterpret_cast<const char*>(t);
+      if (const unsigned char* perm = sqlite3_column_text(stmt, 1)) {
+        entry.allow = (std::string(reinterpret_cast<const char*>(perm)) == "allow");
+      } else {
+        entry.allow = false;
+      }
+      v.push_back(std::move(entry));
     }
   }
   if (stmt) sqlite3_finalize(stmt);
@@ -37,7 +48,13 @@ static bool parse_ipv4(const std::string& ip, uint32_t& out) {
 static bool cidr_match(const std::string& cidr, const std::string& ip) {
   auto pos = cidr.find('/');
   if (pos == std::string::npos) return cidr == ip;
-  std::string net = cidr.substr(0,pos); int bits = std::stoi(cidr.substr(pos+1));
+  int bits = 0;
+  try {
+    bits = std::stoi(cidr.substr(pos + 1));
+  } catch (...) {
+    return false;
+  }
+  std::string net = cidr.substr(0, pos);
   uint32_t nip, tip; if (!parse_ipv4(net, nip) || !parse_ipv4(ip, tip)) return false;
   if (bits <=0) return true; if (bits >=32) return tip==nip;
   uint32_t mask = bits==0?0: htonl(~((1u<<(32-bits))-1));
@@ -100,18 +117,21 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
     if (is_loopback && !write_method) { if (db) sqlite3_close(db); return fccb(); }
   }
 
-  // Load denies first (deny wins)
-  auto denies = load_cidrs(db, "ip_deny");
-  if (ip_in_list(denies, client_ip)) {
-    sqlite3_close(db);
-    Json::Value det; det["ip"] = client_ip; det["reason"] = "Matched deny list";
-    auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_IP_DENY", "Access denied by IP policy", det);
-    fcb(resp); return;
+  auto ip_rules = load_ip_rules(db);
+  for (const auto& rule : ip_rules) {
+    if (rule.allow) continue;
+    if (cidr_match(rule.pattern, client_ip)) {
+      sqlite3_close(db);
+      Json::Value det; det["ip"] = client_ip; det["reason"] = "Matched deny list";
+      auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_IP_DENY", "Access denied by IP policy", det);
+      fcb(resp); return;
+    }
   }
 
-  // Allow list: if client IP is allowed, bypass API key authentication regardless of key presence/validity
-  auto allows = load_cidrs(db, "ip_allow");
-  if (ip_in_list(allows, client_ip)) { sqlite3_close(db); return fccb(); }
+  for (const auto& rule : ip_rules) {
+    if (!rule.allow) continue;
+    if (cidr_match(rule.pattern, client_ip)) { sqlite3_close(db); return fccb(); }
+  }
 
   // If no API keys exist, allow (IP only mode)
   long long keyCount = 0; sqlite3_stmt* cst=nullptr;
@@ -124,21 +144,19 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
   // Decide required role by method/path
   const auto& path = req->path();
   bool is_admin_path = (path.rfind("/admin/", 0) == 0);
-  bool is_search = (path == "/search");
-  bool need_write = write_method && !is_search; // POST/PUT/PATCH/DELETE except POST /search
   bool need_admin = is_admin_path;
 
   // API key required
   auto key = get_api_key(req);
   if (!key) {
     sqlite3_close(db);
-    Json::Value det; det["hint"] = "Provide API key via X-API-Key header or ?api_key= query."; det["required"] = need_admin?"admin":(need_write?"write":"read");
+    Json::Value det; det["hint"] = "Provide API key via X-API-Key header or ?api_key= query."; det["required"] = need_admin?"admin":"user";
     auto resp = karing::http::error(HttpStatusCode::k401Unauthorized, "E_NO_API_KEY", "API key required", det);
     fcb(resp); return;
   }
 
   // Validate + role
-  sqlite3_stmt* st=nullptr; bool ok=false; int key_id=0; std::string role="write";
+  sqlite3_stmt* st=nullptr; bool ok=false; int key_id=0; std::string role="user";
   if (sqlite3_prepare_v2(db, "SELECT id, role FROM api_keys WHERE key=? AND enabled=1;", -1, &st, nullptr)==SQLITE_OK) {
     sqlite3_bind_text(st, 1, key->c_str(), -1, SQLITE_TRANSIENT);
     if (sqlite3_step(st)==SQLITE_ROW) { ok=true; key_id = sqlite3_column_int(st, 0); if (sqlite3_column_type(st,1)!=SQLITE_NULL) { if (const unsigned char* t=sqlite3_column_text(st,1)) role=reinterpret_cast<const char*>(t); } }
@@ -150,26 +168,19 @@ void auth_filter::doFilter(const HttpRequestPtr& req,
     auto resp = karing::http::error(HttpStatusCode::k401Unauthorized, "E_INVALID_API_KEY", "Invalid API key", det);
     fcb(resp); return;
   }
-  // Enforce role hierarchy: read < write < admin
+  bool is_admin_role = (role == "admin");
+  bool is_user_role = (role == "user" || role == "admin");
   if (need_admin) {
-    if (role != "admin") {
+    if (!is_admin_role) {
       sqlite3_close(db);
       Json::Value det; det["role"] = role; det["required"] = "admin";
       auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_FORBIDDEN", "Insufficient role", det);
       fcb(resp); return;
     }
-  } else if (need_write) {
-    if (!(role=="write" || role=="admin")) {
-      sqlite3_close(db);
-      Json::Value det; det["role"] = role; det["required"] = "write or admin";
-      auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_FORBIDDEN", "Insufficient role", det);
-      fcb(resp); return;
-    }
   } else {
-    // read requires any valid key (read/write/admin)
-    if (!(role=="read" || role=="write" || role=="admin")) {
+    if (!is_user_role) {
       sqlite3_close(db);
-      Json::Value det; det["role"] = role; det["required"] = "read or higher";
+      Json::Value det; det["role"] = role; det["required"] = "user";
       auto resp = karing::http::error(HttpStatusCode::k403Forbidden, "E_FORBIDDEN", "Insufficient role", det);
       fcb(resp); return;
     }

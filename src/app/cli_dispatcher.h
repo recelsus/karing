@@ -19,7 +19,7 @@ private:
   void print_version() const;
 
   std::optional<std::string> generate_secret_hex() const;
-  std::string normalize_ipv4_cidr(const std::string& input) const;
+  std::string normalize_ip_pattern(const std::string& input) const;
 
   std::optional<int> handle_new_interface() const;
 

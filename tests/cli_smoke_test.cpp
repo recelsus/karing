@@ -77,8 +77,8 @@ TEST_CASE("ip add normalises CIDR", "[cli]") {
   REQUIRE(code == 0);
   std::string out2 = run_read_stdout(std::string("./karing ip list allow --data ") + db, code);
   REQUIRE(code == 0);
-  REQUIRE(out2.find("ip_allow") != std::string::npos);
-  REQUIRE(out2.find("id\tcidr\tenabled\tcreated_at") != std::string::npos);
+  REQUIRE(out2.find("ip_rules") != std::string::npos);
+  REQUIRE(out2.find("id\tpattern\tpermission\tenabled\tcreated_at") != std::string::npos);
   REQUIRE(out2.find("10.0.0.0/24") != std::string::npos);
 }
 

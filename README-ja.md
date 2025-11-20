@@ -66,23 +66,22 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - `q` — FTS5 クエリ（テキスト: content、ファイル: filename）
   - `type` — `text` | `file`（省略時は混在）
   - 返却: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
-  - 認可: `GET /search` は read で許可。`POST /search` も read として扱います（write 権限は不要）。
+  - 認可: `GET /search` は user ロールで許可。`POST /search` も読み取り扱い（admin 権限は不要）。
 
 備考
 - ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/search` でも到達可能。
-- 認証は `X-API-Key` / `?api_key=`（ロール: read/write/admin）。`docs/config-ja.md` を参照。
+- 認証は `X-API-Key` / `?api_key=`（ロール: user/admin）。`docs/config-ja.md` を参照。
 
 認可ポリシー
 ------------
 
-- 役割の序列: `read < write < admin`（右が上位）。
-- IPの優先:
+- 役割の序列: `user < admin`（右が上位）。
+- IPの優先（`ip_rules` テーブルの `permission` 列）:
   - `deny` に一致 → 常に拒否（APIキーが正しくても拒否）。
   - `allow` に一致 → 認証を開始せず許可（APIキーの有無/正否は不問）。
   - どちらでもない → APIキーを要求（十分なロールが必要）。
 - エンドポイント毎の要件:
-  - `GET /`, `GET /health`, `GET/POST /search` → `read` 以上
-  - `POST /`, `PUT/PATCH/DELETE /` → `write` 以上
+  - `GET /`, `GET /health`, `GET/POST /search`, `POST /`, `PUT/PATCH/DELETE /` → `user` 以上
   - `GET /admin/auth` → `admin`（ただし allow に一致する場合はIP優先で通過）
 
 管理CLI（APIキー / IP制御）
@@ -91,25 +90,25 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 `karing` バイナリから APIキー と IP許可/拒否リストを操作できます。
 
 - APIキー
-  - `karing keys add --label "CI from repo A"`                   # APIキーを自動生成して追加。デフォルトrole=write、ラベルを付与
+  - `karing keys add --label "CI from repo A"`                   # APIキーを自動生成して追加。デフォルトrole=user、ラベルを付与
   - `karing keys add --role admin --label "ops emergency"`       # 管理者権限(admin)のキーを自動生成して追加
   - `karing keys add --disabled --label "staged key"`            # 生成だけして無効化状態で作成（ロールアウト前の準備）
-  - `karing keys set-role 42 admin`                               # 既存キー(id=42)のroleを書き換え：write/read→adminへ
+  - `karing keys set-role 42 user`                                # 既存キー(id=42)を user ロールに降格
+  - `karing keys set-role 42 admin`                               # 既存キー(id=42)を admin ロールに昇格
   - `karing keys set-label 42 "CI from repo B"`                   # 既存キー(id=42)のラベルを更新
   - `karing keys disable 42`                                      # 既存キー(id=42)を無効化（enabled=0）※復活可能
   - `karing keys enable 42`                                       # 無効化したキーを再度有効化（enabled=1）
   - `karing keys rm 42`                                           # 既存キー(id=42)を削除（既定は論理削除でなく物理なら--hardを付ける）
   - `karing keys rm 42 --hard`                                    # 既存キー(id=42)を物理削除（DBから完全に除去）
   - `karing keys add --label "will show secret once" --json`      # 生成結果をJSONで受け取る（secretは初回のみ出力）
-    # → {"id":..., "role":"write","label":"...","enabled":1,"secret":"..."}
+    # → {"id":..., "role":"user","label":"...","enabled":1,"secret":"..."}
 
-- IP許可/拒否
-  - `karing ip add 203.0.113.0/24 allow`                          # 203.0.113.0/24 を許可リストに追加（CIDRそのまま保存）
-  - `karing ip add 203.0.113.10 deny`                             # 単一IPv4を拒否に追加
+- IPルール（単一テーブルで `permission=allow|deny`）
+  - `karing ip add 203.0.113.0/24 allow`                          # 203.0.113.0/24 を許可ルールに追加（CIDRは正規化）
+  - `karing ip add 203.0.113.10 deny`                             # 単一IPv4を拒否ルールに追加
   - `karing ip add 192.168.1.5/24 allow`                          # ホスト/プレフィクス形式 → ネットワークアドレス(192.168.1.0/24)に丸めて保存
-  - `karing ip rm allow:12`                                       # 許可テーブルの id=12 を削除（物理削除。論理運用したい場合は disable 推奨）
-  - `karing ip rm deny:7`                                         # 拒否テーブルの id=7 を削除
-  - `karing ip add 203.0.113.10/32 deny`                          # 既存の allow 203.0.113.0/24 と重なるが登録可
+  - `karing ip del 12`                                            # ルールID 12 を削除（`allow:12` のような旧形式も可）
+  - `karing ip add 203.0.113.10/32 deny`                          # 既存の allow と重なっても追加可（deny が優先）
     # （評価時は“最も具体的なプレフィクス”が優先され、この /32 の deny が勝つ）
 
 管理エンドポイント
@@ -121,13 +120,15 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
     ```json
     {
       "api_keys": [
-        {"id":1,"key":"...","label":"...","enabled":true,"role":"write","created_at":...,"last_used_at":...,"last_ip":"..."}
+        {"id":1,"key":"...","label":"...","enabled":true,"role":"user","created_at":...,"last_used_at":...,"last_ip":"..."}
       ],
-      "ip_allow": [ {"id":12, "cidr":"203.0.113.0/24", "enabled":true, "created_at":...} ],
-      "ip_deny":  [ {"id":7,  "cidr":"203.0.113.10/32", "enabled":true, "created_at":...} ]
+      "ip_rules": [
+        {"id":12, "pattern":"203.0.113.0/24", "permission":"allow", "enabled":true, "created_at":...},
+        {"id":13, "pattern":"203.0.113.10/32", "permission":"deny", "enabled":true, "created_at":...}
+      ]
     }
     ```
-  - ここで表示される `id` を `karing ip rm allow:<id>` / `deny:<id>` で指定して削除できます。
+  - 表示された `id` は `karing ip del <id>` で削除できます（互換のため `allow:<id>` 形式も利用可）。
 
 レスポンス形式
 --------------

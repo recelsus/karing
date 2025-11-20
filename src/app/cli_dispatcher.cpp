@@ -77,8 +77,8 @@ void cli_dispatcher::print_help() const {
             << "  keys enable <id>\n"
             << "  keys rm <id> [--hard]\n"
             << "  ip list [allow|deny]\n"
-            << "  ip add <cidr> allow|deny\n"
-            << "  ip del allow:<id>|deny:<id>\n\n"
+            << "  ip add <ip-or-cidr> allow|deny\n"
+            << "  ip del <id>|allow:<id>|deny:<id>\n\n"
             << std::flush;
 }
 
@@ -103,7 +103,7 @@ std::optional<std::string> cli_dispatcher::generate_secret_hex() const {
   return secret;
 }
 
-std::string cli_dispatcher::normalize_ipv4_cidr(const std::string& input) const {
+std::string cli_dispatcher::normalize_ip_pattern(const std::string& input) const {
   auto slash = input.find('/');
   std::string ip_part = input.substr(0, slash);
   int prefix_bits = -1;
@@ -111,7 +111,7 @@ std::string cli_dispatcher::normalize_ipv4_cidr(const std::string& input) const 
     try {
       prefix_bits = std::stoi(input.substr(slash + 1));
     } catch (...) {
-      prefix_bits = -1;
+      return input;
     }
     if (prefix_bits < 0 || prefix_bits > 32) return input;
   }
@@ -122,7 +122,11 @@ std::string cli_dispatcher::normalize_ipv4_cidr(const std::string& input) const 
   for (int& octet : octets) {
     if (octet < 0 || octet > 255) return input;
   }
-  if (prefix_bits < 0) return input;
+  if (prefix_bits < 0) {
+    std::ostringstream oss;
+    oss << octets[0] << '.' << octets[1] << '.' << octets[2] << '.' << octets[3];
+    return oss.str();
+  }
   uint32_t numeric = (static_cast<uint32_t>(octets[0]) << 24)
                    | (static_cast<uint32_t>(octets[1]) << 16)
                    | (static_cast<uint32_t>(octets[2]) << 8)
@@ -315,50 +319,53 @@ std::optional<int> cli_dispatcher::handle_new_interface() const {
           break;
         }
       }
-      bool show_allow = target.empty() || target == "allow";
-      bool show_deny = target.empty() || target == "deny";
-      if (!show_allow && !show_deny) {
+      if (!target.empty() && target != "allow" && target != "deny") {
         std::cerr << "ip list must be allow|deny\n";
         return 1;
       }
       sqlite3* db_handle = nullptr;
       if (sqlite3_open_v2(db_path.c_str(), &db_handle, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) return 1;
-      auto dump = [&](const char* table) {
-        std::string sql = std::string("SELECT id, cidr, enabled, created_at FROM ") + table + " ORDER BY id;";
-        sqlite3_stmt* stmt = nullptr;
-        if (sqlite3_prepare_v2(db_handle, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-          std::cout << table << '\n';
-          std::cout << "id\tcidr\tenabled\tcreated_at\n";
-          while (sqlite3_step(stmt) == SQLITE_ROW) {
-            const unsigned char* cidr = sqlite3_column_text(stmt, 1);
-            std::cout << sqlite3_column_int(stmt, 0) << '\t'
-                      << (cidr ? reinterpret_cast<const char*>(cidr) : "") << '\t'
-                      << sqlite3_column_int(stmt, 2) << '\t'
-                      << sqlite3_column_int64(stmt, 3) << '\n';
-          }
+      std::string sql = "SELECT id, pattern, permission, enabled, created_at FROM ip_rules";
+      if (!target.empty()) sql += " WHERE permission=?";
+      sql += " ORDER BY id;";
+      sqlite3_stmt* stmt = nullptr;
+      if (sqlite3_prepare_v2(db_handle, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        if (!target.empty()) sqlite3_bind_text(stmt, 1, target.c_str(), -1, SQLITE_TRANSIENT);
+        std::cout << "ip_rules";
+        if (!target.empty()) std::cout << " (" << target << ")";
+        std::cout << '\n';
+        std::cout << "id\tpattern\tpermission\tenabled\tcreated_at\n";
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+          const unsigned char* pattern = sqlite3_column_text(stmt, 1);
+          const unsigned char* permission = sqlite3_column_text(stmt, 2);
+          std::cout << sqlite3_column_int(stmt, 0) << '\t'
+                    << (pattern ? reinterpret_cast<const char*>(pattern) : "") << '\t'
+                    << (permission ? reinterpret_cast<const char*>(permission) : "") << '\t'
+                    << sqlite3_column_int(stmt, 3) << '\t'
+                    << sqlite3_column_int64(stmt, 4) << '\n';
         }
-        if (stmt) sqlite3_finalize(stmt);
-      };
-      if (show_allow) dump("ip_allow");
-      if (show_deny) dump("ip_deny");
+      }
+      if (stmt) sqlite3_finalize(stmt);
       sqlite3_close(db_handle);
       return 0;
     }
     if (cmd2 == "add" && argc_state >= 5) {
       std::string raw = argv_state[3];
       std::string list = argv_state[4];
-      std::string to_store = normalize_ipv4_cidr(raw);
-      const char* table = (list == "allow") ? "ip_allow" : (list == "deny" ? "ip_deny" : nullptr);
-      if (!table) {
+      if (!(list == "allow" || list == "deny")) {
         std::cerr << "ip list must be allow|deny\n";
         return 1;
       }
+      std::string to_store = normalize_ip_pattern(raw);
       sqlite3* db_handle = nullptr;
       if (sqlite3_open_v2(db_path.c_str(), &db_handle, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) return 1;
       sqlite3_stmt* stmt = nullptr;
-      std::string insert_sql = std::string("INSERT OR IGNORE INTO ") + table + "(cidr, enabled, created_at) VALUES(?,1,strftime('%s','now'));";
+      std::string insert_sql =
+          "INSERT INTO ip_rules(pattern, permission, enabled, created_at) VALUES(?,?,1,strftime('%s','now')) "
+          "ON CONFLICT(pattern, permission) DO UPDATE SET enabled=1;";
       if (sqlite3_prepare_v2(db_handle, insert_sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, to_store.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, list.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt);
       }
       if (stmt) sqlite3_finalize(stmt);
@@ -369,21 +376,16 @@ std::optional<int> cli_dispatcher::handle_new_interface() const {
     if (cmd2 == "del" && argc_state >= 4) {
       std::string spec = argv_state[3];
       auto pos = spec.find(':');
-      if (pos == std::string::npos) {
-        std::cerr << "use allow:<id> or deny:<id>\n";
-        return 1;
-      }
-      std::string list = spec.substr(0, pos);
-      int id = std::atoi(spec.substr(pos + 1).c_str());
-      const char* table = (list == "allow") ? "ip_allow" : (list == "deny" ? "ip_deny" : nullptr);
-      if (!table) {
-        std::cerr << "ip list must be allow|deny\n";
+      std::string id_part = (pos == std::string::npos) ? spec : spec.substr(pos + 1);
+      int id = std::atoi(id_part.c_str());
+      if (id <= 0) {
+        std::cerr << "ip del expects a numeric id\n";
         return 1;
       }
       sqlite3* db_handle = nullptr;
       if (sqlite3_open_v2(db_path.c_str(), &db_handle, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) return 1;
       sqlite3_stmt* stmt = nullptr;
-      std::string delete_sql = std::string("DELETE FROM ") + table + " WHERE id=?;";
+      std::string delete_sql = "DELETE FROM ip_rules WHERE id=?;";
       if (sqlite3_prepare_v2(db_handle, delete_sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, id);
         sqlite3_step(stmt);

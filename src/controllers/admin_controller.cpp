@@ -42,25 +42,24 @@ void admin_controller::list_auth(const drogon::HttpRequestPtr& req,
     out["api_keys"] = std::move(arr);
   }
   // IP allow
-  auto dump_ip_table = [&](const char* table){
+  {
     Json::Value arr(Json::arrayValue);
-    std::string sql = std::string("SELECT id, cidr, enabled, created_at FROM ") + table + " ORDER BY id;";
+    const char* sql = "SELECT id, pattern, permission, enabled, created_at FROM ip_rules ORDER BY id;";
     sqlite3_stmt* st = nullptr;
-    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &st, nullptr) == SQLITE_OK) {
+    if (sqlite3_prepare_v2(db, sql, -1, &st, nullptr) == SQLITE_OK) {
       while (sqlite3_step(st) == SQLITE_ROW) {
         Json::Value row(Json::objectValue);
         row["id"] = sqlite3_column_int(st, 0);
-        if (const unsigned char* t = sqlite3_column_text(st, 1)) row["cidr"] = reinterpret_cast<const char*>(t);
-        row["enabled"] = sqlite3_column_int(st, 2) != 0;
-        row["created_at"] = (Json::Int64)sqlite3_column_int64(st, 3);
+        if (const unsigned char* t = sqlite3_column_text(st, 1)) row["pattern"] = reinterpret_cast<const char*>(t);
+        if (const unsigned char* t = sqlite3_column_text(st, 2)) row["permission"] = reinterpret_cast<const char*>(t);
+        row["enabled"] = sqlite3_column_int(st, 3) != 0;
+        row["created_at"] = (Json::Int64)sqlite3_column_int64(st, 4);
         arr.append(row);
       }
     }
     if (st) sqlite3_finalize(st);
-    return arr;
-  };
-  out["ip_allow"] = dump_ip_table("ip_allow");
-  out["ip_deny"] = dump_ip_table("ip_deny");
+    out["ip_rules"] = std::move(arr);
+  }
 
   sqlite3_close(db);
   auto resp = drogon::HttpResponse::newHttpJsonResponse(out);

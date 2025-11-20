@@ -67,7 +67,7 @@ void init_sqlite_schema_file(const std::string& db_path_str) {
   exec("PRAGMA foreign_keys = ON;");
   exec("BEGIN;");
   exec("CREATE TABLE IF NOT EXISTS config (\n  name TEXT PRIMARY KEY,\n  value TEXT NOT NULL\n);");
-  exec("CREATE TABLE IF NOT EXISTS api_keys (\n  id INTEGER PRIMARY KEY,\n  key TEXT NOT NULL UNIQUE,\n  label TEXT,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  last_used_at INTEGER,\n  last_ip TEXT\n);");
+  exec("CREATE TABLE IF NOT EXISTS api_keys (\n  id INTEGER PRIMARY KEY,\n  key TEXT NOT NULL UNIQUE,\n  label TEXT,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  role TEXT NOT NULL DEFAULT 'user',\n  created_at INTEGER NOT NULL,\n  last_used_at INTEGER,\n  last_ip TEXT\n);");
   // Ensure role column exists for RBAC without noisy duplicate warnings
   {
     bool has_role = false;
@@ -76,13 +76,33 @@ void init_sqlite_schema_file(const std::string& db_path_str) {
     sqlite3_exec(db, "SELECT 1 FROM pragma_table_info('api_keys') WHERE name='role' LIMIT 1;", cbcol, &has_role, &err_role);
     if (err_role) { sqlite3_free(err_role); err_role = nullptr; }
     if (!has_role) {
-      exec("ALTER TABLE api_keys ADD COLUMN role TEXT NOT NULL DEFAULT 'write';");
+      exec("ALTER TABLE api_keys ADD COLUMN role TEXT NOT NULL DEFAULT 'user';");
     }
-    // Backfill legacy rows where role stayed NULL
-    exec("UPDATE api_keys SET role='write' WHERE role IS NULL;");
+    // Backfill legacy rows
+    exec("UPDATE api_keys SET role='user' WHERE role IS NULL OR role IN ('read','write');");
   }
-  exec("CREATE TABLE IF NOT EXISTS ip_allow (\n  id INTEGER PRIMARY KEY,\n  cidr TEXT NOT NULL UNIQUE,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL\n);");
-  exec("CREATE TABLE IF NOT EXISTS ip_deny (\n  id INTEGER PRIMARY KEY,\n  cidr TEXT NOT NULL UNIQUE,\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL\n);");
+  auto table_exists = [&](const char* name) {
+    bool exists = false;
+    std::string sql = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+      sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+      if (sqlite3_step(stmt) == SQLITE_ROW) exists = true;
+    }
+    if (stmt) sqlite3_finalize(stmt);
+    return exists;
+  };
+  bool had_ip_allow = table_exists("ip_allow");
+  bool had_ip_deny = table_exists("ip_deny");
+  exec("CREATE TABLE IF NOT EXISTS ip_rules (\n  id INTEGER PRIMARY KEY,\n  pattern TEXT NOT NULL,\n  permission TEXT NOT NULL CHECK (permission IN ('allow','deny')),\n  enabled INTEGER NOT NULL DEFAULT 1,\n  created_at INTEGER NOT NULL,\n  UNIQUE(pattern, permission)\n);");
+  if (had_ip_allow) {
+    exec("INSERT OR IGNORE INTO ip_rules(pattern, permission, enabled, created_at) SELECT cidr,'allow',enabled,created_at FROM ip_allow;");
+  }
+  if (had_ip_deny) {
+    exec("INSERT OR IGNORE INTO ip_rules(pattern, permission, enabled, created_at) SELECT cidr,'deny',enabled,created_at FROM ip_deny;");
+  }
+  if (had_ip_allow) exec("DROP TABLE IF EXISTS ip_allow;");
+  if (had_ip_deny) exec("DROP TABLE IF EXISTS ip_deny;");
   exec("CREATE TABLE IF NOT EXISTS karing (\n  id INTEGER PRIMARY KEY,\n  content TEXT,\n  is_file INTEGER NOT NULL DEFAULT 0,\n  filename TEXT,\n  mime TEXT,\n  content_blob BLOB,\n  created_at INTEGER,\n  updated_at INTEGER,\n  revision INTEGER NOT NULL DEFAULT 0,\n  is_active INTEGER NOT NULL DEFAULT 0,\n  CHECK (is_active IN (0,1)),\n  CHECK (\n    is_active = 0 OR (\n      (is_file = 0 AND content IS NOT NULL AND content_blob IS NULL)\n      OR\n      (is_file = 1 AND content_blob IS NOT NULL AND content IS NULL AND filename IS NOT NULL AND mime IS NOT NULL)\n    )\n  )\n);");
   exec("CREATE INDEX IF NOT EXISTS idx_karing_created_at_desc ON karing(created_at DESC, id DESC);");
   exec("CREATE INDEX IF NOT EXISTS idx_karing_is_file_created ON karing(is_file, created_at DESC, id DESC);");
