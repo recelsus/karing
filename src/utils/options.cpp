@@ -8,15 +8,12 @@ runtime_options& runtime_options::instance() {
 }
 
 void runtime_options::set_runtime(const std::string& db_path_value, int build_limit_value, int runtime_limit_value,
-                                  int max_file_bytes_value, int max_text_bytes_value,
                                   bool no_auth_value, bool trust_proxy_value,
                                   bool allow_localhost_value) {
   std::lock_guard<std::mutex> guard(state_mutex);
   db_path_storage = db_path_value;
   build_limit_storage = build_limit_value;
   runtime_limit_storage = runtime_limit_value;
-  max_file_bytes_storage = max_file_bytes_value;
-  max_text_bytes_storage = max_text_bytes_value;
   no_auth_storage = no_auth_value;
   trust_proxy_storage = trust_proxy_value;
   allow_localhost_storage = allow_localhost_value;
@@ -25,8 +22,6 @@ void runtime_options::set_runtime(const std::string& db_path_value, int build_li
 const std::string& runtime_options::db_path() const { return db_path_storage; }
 int runtime_options::build_limit() const { return build_limit_storage; }
 int runtime_options::runtime_limit() const { return runtime_limit_storage; }
-int runtime_options::max_file_bytes() const { return max_file_bytes_storage; }
-int runtime_options::max_text_bytes() const { return max_text_bytes_storage; }
 bool runtime_options::no_auth() const { return no_auth_storage; }
 bool runtime_options::trust_proxy() const { return trust_proxy_storage; }
 bool runtime_options::allow_localhost() const { return allow_localhost_storage; }
@@ -69,5 +64,12 @@ void runtime_options::set_base_path(const std::string& path_value) {
 }
 
 const std::string& runtime_options::base_path() const { return base_path_storage; }
+
+void runtime_options::set_web_enabled(bool value) {
+  std::lock_guard<std::mutex> guard(state_mutex);
+  web_enabled_storage = value;
+}
+
+bool runtime_options::web_enabled() const { return web_enabled_storage; }
 
 }

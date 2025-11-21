@@ -15,6 +15,7 @@
 #include <unistd.h>
 #endif
 #include <drogon/drogon.h>
+#include <trantor/utils/Logger.h>
 
 #include "version.h"
 #include "db/db_init.h"
@@ -122,6 +123,66 @@ void merge_known(Json::Value& base,
   }
 }
 
+Json::Value* ensure_storage(Json::Value& root) {
+  if (!root.isMember("storage") || !root["storage"].isObject()) {
+    root["storage"] = Json::objectValue;
+  }
+  return &root["storage"];
+}
+
+const Json::Value* find_storage(const Json::Value& root) {
+  if (root.isMember("storage") && root["storage"].isObject()) return &root["storage"];
+  if (root.isMember("karing") && root["karing"].isObject()) return &root["karing"];
+  return nullptr;
+}
+
+void migrate_legacy_karing(Json::Value& root) {
+  if (!root.isObject()) return;
+  if (root.isMember("karing") && root["karing"].isObject()) {
+    if (!root.isMember("storage") || !root["storage"].isObject()) {
+      root["storage"] = root["karing"];
+    }
+    root.removeMember("karing");
+  }
+  auto* storage = ensure_storage(root);
+  if (!storage) return;
+  auto gain_upload = [&](Json::Value& candidate) {
+    if (storage->isMember("upload_limit")) return false;
+    if (!candidate.isIntegral()) return false;
+    (*storage)["upload_limit"] = candidate;
+    return true;
+  };
+  if (root.isMember("client_max_body_size")) {
+    if (gain_upload(root["client_max_body_size"])) {
+      root.removeMember("client_max_body_size");
+    }
+  }
+  if (storage->isMember("client_max_body_size")) {
+    if (gain_upload((*storage)["client_max_body_size"])) {
+      storage->removeMember("client_max_body_size");
+    }
+  }
+}
+
+std::optional<std::string> find_base_url(const Json::Value& root) {
+  if (root.isMember("listeners") && root["listeners"].isArray()) {
+    for (const auto& listener : root["listeners"]) {
+      if (listener.isMember("base_url") && listener["base_url"].isString()) {
+        return listener["base_url"].asString();
+      }
+    }
+  }
+  if (const auto* storage = find_storage(root)) {
+    if (storage->isMember("base_url") && (*storage)["base_url"].isString()) {
+      return (*storage)["base_url"].asString();
+    }
+    if (storage->isMember("base_path") && (*storage)["base_path"].isString()) {
+      return (*storage)["base_path"].asString();
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 namespace karing::app {
@@ -138,8 +199,6 @@ int bootstrap::execute() {
   bool check_only = false;
   int port_override = -1;
   int limit_override = -1;
-  long long file_limit_override = -1;
-  long long text_limit_override = -1;
   bool tls_enable = false;
   std::string tls_cert;
   std::string tls_key;
@@ -148,6 +207,11 @@ int bootstrap::execute() {
   bool trust_proxy_flag = false;
   bool allow_localhost_flag = false;
   std::string base_path_override;
+  bool web_ui_enabled = true;
+  std::optional<bool> web_env_override;
+  std::optional<bool> web_cli_override;
+  std::string log_level_from_env;
+  std::optional<std::string> log_level_cli;
   Json::Value drogon_config;
   if (!parse_json_string(karing::config::drogon_default_json(), drogon_config, "embedded config")) {
     return 1;
@@ -156,12 +220,6 @@ int bootstrap::execute() {
   if (const char* env = std::getenv("KARING_DATA"); env && *env) data_file = env;
   if (const char* env = std::getenv("KARING_LIMIT"); env && *env) {
     try { limit_override = std::stoi(env); } catch (...) {}
-  }
-  if (const char* env = std::getenv("KARING_MAX_FILE_BYTES"); env && *env) {
-    try { file_limit_override = std::stoll(env); } catch (...) {}
-  }
-  if (const char* env = std::getenv("KARING_MAX_TEXT_BYTES"); env && *env) {
-    try { text_limit_override = std::stoll(env); } catch (...) {}
   }
   auto truthy = [](const char* s) {
     if (!s) return false;
@@ -172,7 +230,14 @@ int bootstrap::execute() {
   if (truthy(std::getenv("KARING_NO_AUTH"))) no_auth_flag = true;
   if (truthy(std::getenv("KARING_TRUSTED_PROXY"))) trust_proxy_flag = true;
   if (truthy(std::getenv("KARING_ALLOW_LOCALHOST"))) allow_localhost_flag = true;
-  if (const char* env = std::getenv("KARING_BASE_PATH"); env && *env) base_path_override = env;
+  if (const char* env = std::getenv("KARING_BASE_URL"); env && *env) base_path_override = env;
+  else if (const char* env = std::getenv("KARING_BASE_PATH"); env && *env) base_path_override = env;
+  if (const char* env = std::getenv("KARING_WEB_UI"); env && *env) {
+    web_env_override = truthy(env);
+  }
+  if (const char* env = std::getenv("KARING_LOG_LEVEL"); env && *env) {
+    log_level_from_env = env;
+  }
 
   for (int i = 1; i < argc_; ++i) {
     std::string arg = argv_[i];
@@ -184,10 +249,6 @@ int bootstrap::execute() {
       port_override = std::stoi(argv_[++i]);
     } else if (arg == "--limit" && i + 1 < argc_) {
       limit_override = std::stoi(argv_[++i]);
-    } else if (arg == "--max-file-bytes" && i + 1 < argc_) {
-      try { file_limit_override = std::stoll(argv_[++i]); } catch (...) {}
-    } else if (arg == "--max-text-bytes" && i + 1 < argc_) {
-      try { text_limit_override = std::stoll(argv_[++i]); } catch (...) {}
     } else if (arg == "--no-auth") {
       no_auth_flag = true;
     } else if (arg == "--trusted-proxy") {
@@ -204,8 +265,14 @@ int bootstrap::execute() {
       require_tls = true;
     } else if (arg == "--check-db") {
       check_only = true;
-    } else if ((arg == "--base-path" || arg == "--baseurl" || arg == "--base") && i + 1 < argc_) {
+    } else if ((arg == "--base-path" || arg == "--baseurl" || arg == "--base-url" || arg == "--base") && i + 1 < argc_) {
       base_path_override = argv_[++i];
+    } else if (arg == "--enable-web" || arg == "--enable-web-ui") {
+      web_cli_override = true;
+    } else if (arg == "--disable-web" || arg == "--disable-web-ui") {
+      web_cli_override = false;
+    } else if (arg == "--log-level" && i + 1 < argc_) {
+      log_level_cli = argv_[++i];
     }
   }
 
@@ -213,8 +280,42 @@ int bootstrap::execute() {
     fs::path config_full = fs::absolute(config_path);
     Json::Value overrides;
     if (!parse_json_file(config_full, overrides)) return 1;
+    migrate_legacy_karing(overrides);
     merge_known(drogon_config, overrides);
   }
+
+  migrate_legacy_karing(drogon_config);
+  Json::Value* storage_config = ensure_storage(drogon_config);
+  if (!(*storage_config).isMember("limit")) {
+    (*storage_config)["limit"] = 100;
+  }
+  if (!(*storage_config).isMember("upload_limit")) {
+    (*storage_config)["upload_limit"] = static_cast<Json::Int64>(20971520);
+  }
+  if (!(*storage_config).isMember("web_enabled")) {
+    (*storage_config)["web_enabled"] = true;
+  }
+  Json::Int64 upload_limit_value = 20971520;
+  if ((*storage_config)["upload_limit"].isInt64() || (*storage_config)["upload_limit"].isUInt64()) {
+    upload_limit_value = (*storage_config)["upload_limit"].asInt64();
+  } else if ((*storage_config)["upload_limit"].isInt()) {
+    upload_limit_value = (*storage_config)["upload_limit"].asInt();
+  }
+  (*storage_config)["upload_limit"] = upload_limit_value;
+  drogon_config["client_max_body_size"] = upload_limit_value;
+  if ((*storage_config).isMember("web_enabled") && (*storage_config)["web_enabled"].isBool()) {
+    web_ui_enabled = (*storage_config)["web_enabled"].asBool();
+  }
+
+  std::string effective_log_level = "INFO";
+  if (drogon_config.isMember("log") && drogon_config["log"].isObject() &&
+      drogon_config["log"].isMember("log_level") && drogon_config["log"]["log_level"].isString()) {
+    effective_log_level = drogon_config["log"]["log_level"].asString();
+  }
+  if (!log_level_from_env.empty()) effective_log_level = log_level_from_env;
+  if (log_level_cli) effective_log_level = *log_level_cli;
+  if (web_env_override.has_value()) web_ui_enabled = *web_env_override;
+  if (web_cli_override.has_value()) web_ui_enabled = *web_cli_override;
 
   if (data_file.empty()) {
     fs::path data_home;
@@ -325,6 +426,30 @@ int bootstrap::execute() {
 
   try { fs::create_directories("logs"); } catch (...) {}
   drogon::app().loadConfigJson(drogon_config);
+  auto set_log_level_from_string = [&](const std::string& level) {
+    if (level.empty()) return;
+    std::string upper = level;
+    std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    if (upper == "NONE" || upper == "OFF") {
+      drogon::app().setLogLevel(trantor::Logger::kFatal);
+      return;
+    }
+    trantor::Logger::LogLevel lvl = trantor::Logger::kInfo;
+    bool ok = true;
+    if (upper == "TRACE") lvl = trantor::Logger::kTrace;
+    else if (upper == "DEBUG") lvl = trantor::Logger::kDebug;
+    else if (upper == "INFO") lvl = trantor::Logger::kInfo;
+    else if (upper == "WARN" || upper == "WARNING") lvl = trantor::Logger::kWarn;
+    else if (upper == "ERROR") lvl = trantor::Logger::kError;
+    else if (upper == "FATAL") lvl = trantor::Logger::kFatal;
+    else ok = false;
+    if (ok) {
+      drogon::app().setLogLevel(lvl);
+    } else {
+      LOG_WARN << "Unknown log level '" << level << "'; keeping existing level.";
+    }
+  };
+  set_log_level_from_string(effective_log_level);
   if (const char* env_log = std::getenv("KARING_LOG_PATH"); env_log && *env_log) {
     try { fs::create_directories(env_log); } catch (...) {}
     drogon::app().setLogPath(env_log);
@@ -389,11 +514,15 @@ int bootstrap::execute() {
     options_state.set_tls_cert_paths(cert_path, key_path);
   }
 
+  auto set_base_from_json = [&](const Json::Value& cfg) {
+    if (auto base = find_base_url(cfg)) {
+      options_state.set_base_path(*base);
+    }
+  };
+
   try {
     auto cfg = drogon::app().getCustomConfig();
-    if (cfg.isMember("karing") && cfg["karing"].isMember("base_path") && cfg["karing"]["base_path"].isString()) {
-      options_state.set_base_path(cfg["karing"]["base_path"].asString());
-    }
+    set_base_from_json(cfg);
     std::vector<std::string> proxies;
     auto collect = [&](const Json::Value& v) {
       if (v.isArray()) {
@@ -413,27 +542,32 @@ int bootstrap::execute() {
       }
     };
     if (cfg.isMember("app") && cfg["app"].isMember("trusted_proxies")) collect(cfg["app"]["trusted_proxies"]);
-    if (cfg.isMember("karing") && cfg["karing"].isMember("trusted_proxies")) collect(cfg["karing"]["trusted_proxies"]);
+    if (const auto* storage = find_storage(cfg); storage && storage->isMember("trusted_proxies")) {
+      collect((*storage)["trusted_proxies"]);
+    }
     if (!proxies.empty()) options_state.set_trusted_proxies(proxies);
   } catch (...) {}
 
+  set_base_from_json(drogon_config);
+
   if (!base_path_override.empty()) options_state.set_base_path(base_path_override);
+
+  auto fetch_limit = [](const Json::Value& root) -> std::optional<int> {
+    if (const auto* storage = find_storage(root)) {
+      if ((*storage).isMember("limit") && (*storage)["limit"].isInt()) {
+        return (*storage)["limit"].asInt();
+      }
+    }
+    return std::nullopt;
+  };
 
   int limit_value = 100;
   try {
     auto cfg = drogon::app().getCustomConfig();
-    if (cfg.isMember("karing") && cfg["karing"].isMember("limit") && cfg["karing"]["limit"].isInt()) {
-      limit_value = cfg["karing"]["limit"].asInt();
-    }
+    if (auto limit_override_cfg = fetch_limit(cfg)) limit_value = *limit_override_cfg;
   } catch (...) {}
   if (limit_value == 100) {
-    try {
-      if (drogon_config.isMember("karing") &&
-          drogon_config["karing"].isMember("limit") &&
-          drogon_config["karing"]["limit"].isInt()) {
-        limit_value = drogon_config["karing"]["limit"].asInt();
-      }
-    } catch (...) {}
+    if (auto limit_override_cfg = fetch_limit(drogon_config)) limit_value = *limit_override_cfg;
   }
   if (limit_override > 0) limit_value = limit_override;
   if (limit_value > KARING_BUILD_LIMIT) {
@@ -445,44 +579,24 @@ int bootstrap::execute() {
 
   karing::db::init_sqlite_schema_file(resolved_db);
 
-  const long long hard_file_max = 20971520LL;
-  long long max_file_bytes = hard_file_max;
+  Json::Int64 client_body_limit = upload_limit_value;
   try {
     auto cfg = drogon::app().getCustomConfig();
-    if (cfg.isMember("karing") && cfg["karing"].isMember("max_file_bytes") && cfg["karing"]["max_file_bytes"].isInt64()) {
-      max_file_bytes = cfg["karing"]["max_file_bytes"].asInt64();
+    if (const auto* storage = find_storage(cfg);
+        storage && (*storage).isMember("upload_limit") && (*storage)["upload_limit"].isInt64()) {
+      client_body_limit = (*storage)["upload_limit"].asInt64();
+    } else if (cfg.isMember("client_max_body_size") && cfg["client_max_body_size"].isInt64()) {
+      client_body_limit = cfg["client_max_body_size"].asInt64();
     }
   } catch (...) {}
-  if (file_limit_override > 0) max_file_bytes = file_limit_override;
-  if (max_file_bytes > hard_file_max) {
-    LOG_WARN << "max_file_bytes " << max_file_bytes << " exceeds hard cap " << hard_file_max << "; clamping.";
-    max_file_bytes = hard_file_max;
-  }
-  if (max_file_bytes < 1) max_file_bytes = 1;
-
-  const long long hard_text_max = 10485760LL;
-  long long max_text_bytes = hard_text_max;
-  try {
-    auto cfg = drogon::app().getCustomConfig();
-    if (cfg.isMember("karing") && cfg["karing"].isMember("max_text_bytes") && cfg["karing"]["max_text_bytes"].isInt64()) {
-      max_text_bytes = cfg["karing"]["max_text_bytes"].asInt64();
-    }
-  } catch (...) {}
-  if (text_limit_override > 0) max_text_bytes = text_limit_override;
-  if (max_text_bytes > hard_text_max) {
-    LOG_WARN << "max_text_bytes " << max_text_bytes << " exceeds hard cap " << hard_text_max << "; clamping.";
-    max_text_bytes = hard_text_max;
-  }
-  if (max_text_bytes < 1) max_text_bytes = 1;
 
   options_state.set_runtime(resolved_db,
                             KARING_BUILD_LIMIT,
                             limit_value,
-                            static_cast<int>(max_file_bytes),
-                            static_cast<int>(max_text_bytes),
                             no_auth_flag,
                             trust_proxy_flag,
                             allow_localhost_flag);
+  options_state.set_web_enabled(web_ui_enabled);
 
   int shown_port = 0;
   try {
@@ -507,8 +621,6 @@ int bootstrap::execute() {
            << " | port " << shown_port
            << " | db " << data_path.string()
            << " | limit " << limit_value << "/" << KARING_BUILD_LIMIT
-           << " | max_file_bytes " << max_file_bytes << "/20971520"
-           << " | max_text_bytes " << max_text_bytes << "/10485760"
            << " | no_auth " << (no_auth_flag ? 1 : 0)
            << " | allow_localhost " << (allow_localhost_flag ? 1 : 0)
            << " | trusted_proxy " << (trust_proxy_flag ? 1 : 0);
@@ -518,8 +630,6 @@ int bootstrap::execute() {
     std::cout << "Tables (" << tables.size() << ")\n";
     for (const auto& t : tables) std::cout << "- " << t.first << "\n";
     std::cout << "limit=" << limit_value << " (build-limit=" << KARING_BUILD_LIMIT << ")\n";
-    std::cout << "max_file_bytes=" << max_file_bytes << " (hard-cap=20971520)\n";
-    std::cout << "max_text_bytes=" << max_text_bytes << " (hard-cap=10485760)\n";
     return 0;
   }
 

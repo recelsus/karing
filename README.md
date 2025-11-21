@@ -8,7 +8,7 @@ Karing is a lightweight pastebin-like API service built on Drogon. It stores sho
 - Text and file blobs (images/audio)
 - Full‑text search (FTS5) over text and filenames
 - API key auth + IP allow/deny
-- Base path for reverse proxy subpaths
+- Base URL prefix for reverse proxy subpaths
 - TLS via reverse proxy or app flags
 
 For a Japanese README, see `README-ja.md`.
@@ -23,7 +23,7 @@ Quick Start
   - Example:
     ```bash
     docker run --rm -p 8080:8080 \
-      -e KARING_BASE_PATH=/myapp \
+      -e KARING_BASE_URL=/myapp \
       -e KARING_LIMIT=100 \
       -v karing-data:/var/lib/karing \
       ghcr.io/recelsus/karing:latest
@@ -44,12 +44,16 @@ Configuration
 - Defaults (XDG):
   - DB: `$XDG_DATA_HOME/karing/karing.db` or `~/.local/share/karing/karing.db` if `XDG_DATA_HOME` is unset. When both fail, `karing.db` is created next to the executable.
   - Logs: `$XDG_STATE_HOME/karing/logs` or `~/.local/state/karing/logs` if `XDG_STATE_HOME` is unset.
+- HTTP upload limit is controlled solely by `storage.upload_limit` (propagated to Drogon's `client_max_body_size`; no additional DB-level cap).
 - Windows paths
   - DB default: `%LOCALAPPDATA%\karing\karing.db`
 - Env shortcuts:
-  - Paths: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_BASE_PATH`
-  - Limits: `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`
-  - Flags: `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`
+  - Paths: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_BASE_URL` (`KARING_BASE_PATH` remains as an alias)
+  - Limits: `KARING_LIMIT`
+  - Flags: `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_WEB_UI`
+  - Logging: `KARING_LOG_LEVEL` (`TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`/`FATAL`/`NONE`)
+- CLI overrides: `--enable-web` / `--disable-web`, `--log-level <level>`
+- JSON config: `storage.web_enabled` toggles the Web UI endpoint; `storage.upload_limit` controls HTTP body size; `log.log_level` accepts the same values as `KARING_LOG_LEVEL` (use `NONE` to silence logs).
 - Details: see `docs/config.md`.
 
 Endpoints
@@ -60,7 +64,7 @@ Endpoints
   - JSON (`application/json`): default `action=create_text`. Supply `{ content }` to create text. Use `action=update_text`/`patch_text` with `id` to replace or patch existing text. `action=delete` with `id` performs logical delete.
   - Multipart (`multipart/form-data`): default `action=create_file`. Upload a file field to create file entries. Use `action=update_file`/`patch_file` with `id` to replace or patch files. `action=delete` with `id` is also accepted via multipart form fields.
   - Responses mirror previous verbs: creates return `{ success: true, message: "Created", id }` (201), other actions return `{ success: true, ... }` or 204 for delete.
-- `GET /health` — service/build/limits/TLS/base_path
+- `GET /health` — service/build/limits/TLS/base_url
 - `GET|POST /search` — list/search API (JSON only)
   - No params: latest items up to `limit` (default: runtime limit)
   - `limit`
@@ -71,7 +75,7 @@ Endpoints
 - `GET /web` — placeholder endpoint for the future Web UI bundle (currently returns a JSON stub).
 
 Notes
-- Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/search`.
+- Base URL support: the same endpoints are available under `<base_url>`, e.g., `/myapp`, `/myapp/health`, `/myapp/search`.
 - Auth: API key via `X-API-Key` or `?api_key=`, role‑based (user/admin). See `docs/config.md`.
 
 Auth Policy
@@ -170,7 +174,7 @@ Binaries and Docker
   - Filenames: `karing-ubuntu` (Linux), `karing-macos` (macOS).
 - Docker
   - Published to GHCR by CI: `ghcr.io/recelsus/karing` with tags for branch/sha/semver.
-  - Container respects env vars: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`.
+  - Container respects env vars: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`, `KARING_WEB_UI`, `KARING_LOG_LEVEL`.
   - To use a JSON config, bind-mount it into the container (e.g., `/etc/karing/karing.json`) and append `--config /etc/karing/karing.json` to the run command.
   - Defaults baked in Dockerfile: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing` (override with `-e` or compose `environment:`).
 

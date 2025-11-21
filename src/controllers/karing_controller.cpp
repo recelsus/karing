@@ -8,7 +8,6 @@
 #include <fstream>
 #include "dao/karing_dao.h"
 #include "utils/options.h"
-#include "utils/limits.h"
 #include "utils/json_response.h"
 #include "utils/search_query.h"
 #include "version.h"
@@ -263,9 +262,6 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
       return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
     }
     std::string content = (*json_body)["content"].asString();
-    if ((long long)content.size() > (long long)options_state.max_text_bytes()) {
-      return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
-    }
     int id = dao.insert_text(content);
     if (id < 0) return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Insert failed"));
     return cb(karing::http::created(id));
@@ -280,9 +276,6 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
       return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
     }
     std::string content = (*json_body)["content"].asString();
-    if ((long long)content.size() > (long long)options_state.max_text_bytes()) {
-      return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
-    }
     if (!dao.update_text(*id, content)) {
       return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     }
@@ -297,9 +290,6 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
     std::optional<std::string> content;
     if ((*json_body)["content"].isString()) {
       content = (*json_body)["content"].asString();
-      if ((long long)content->size() > (long long)options_state.max_text_bytes()) {
-        return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
-      }
     }
     if (!dao.patch_text(*id, content)) {
       return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
@@ -324,9 +314,6 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
     std::optional<std::string> data;
     if (file_part) {
       data = std::string(file_part->fileData(), file_part->fileLength());
-      if ((long long)data->size() > (long long)options_state.max_file_bytes()) {
-        return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
-      }
     }
     std::string mime = req->getParameter("mime");
     if (!mime.empty()) {
@@ -383,16 +370,18 @@ void karing_controller::health(const HttpRequestPtr& req, std::function<void(con
   out["limit_max"] = KARING_MAX_LIMIT;
   // sizes
   Json::Value sizes(Json::objectValue);
-  sizes["max_file_bytes"] = options_state.max_file_bytes();
-  sizes["max_text_bytes"] = options_state.max_text_bytes();
-  sizes["hard_file_bytes"] = KARING_HARD_MAX_FILE_BYTES;
-  sizes["hard_text_bytes"] = KARING_HARD_MAX_TEXT_BYTES;
-  // client_max_body_size from drogon config if present
-  try {
-    auto cfg = drogon::app().getCustomConfig();
+  auto extract_sizes = [&](const Json::Value& cfg) {
+    if (cfg.isMember("storage") && cfg["storage"].isObject() &&
+        cfg["storage"].isMember("upload_limit") && cfg["storage"]["upload_limit"].isInt64()) {
+      sizes["upload_limit"] = cfg["storage"]["upload_limit"].asInt64();
+    }
     if (cfg.isMember("client_max_body_size") && cfg["client_max_body_size"].isInt64()) {
       sizes["client_max_body_size"] = cfg["client_max_body_size"].asInt64();
     }
+  };
+  try {
+    auto cfg = drogon::app().getCustomConfig();
+    extract_sizes(cfg);
   } catch (...) {}
   out["sizes"] = sizes;
   // tls
@@ -405,6 +394,7 @@ void karing_controller::health(const HttpRequestPtr& req, std::function<void(con
     tls["cert"] = options_state.tls_cert_path();
   }
   out["tls"] = tls;
+  out["base_url"] = options_state.base_path();
   out["base_path"] = options_state.base_path();
   // build info
   Json::Value build(Json::objectValue);

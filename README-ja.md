@@ -9,7 +9,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 - テキストとファイル（画像/音声）
 - FTS5 検索（テキスト本文とファイル名を対象）
 - API キー認証 + IP allow/deny
-- ベースパスでサブパス公開
+- ベースURLでサブパス公開
 - TLS はリバースプロキシ or アプリで
 
 英語版 README は `README.md` を参照してください。
@@ -24,7 +24,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - 例:
     ```bash
     docker run --rm -p 8080:8080 \
-      -e KARING_BASE_PATH=/myapp \
+      -e KARING_BASE_URL=/myapp \
       -e KARING_LIMIT=100 \
       -v karing-data:/var/lib/karing \
       ghcr.io/recelsus/karing:latest
@@ -42,12 +42,16 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - DB: `$XDG_DATA_HOME/karing/karing.db` または `~/.local/share/karing/karing.db`
   - ログ: `$XDG_STATE_HOME/karing/logs` または `~/.local/state/karing/logs`
   - どちらも得られない場合は実行ファイルと同じディレクトリ
+- HTTP のアップロード上限は `storage.upload_limit` のみで制御します（Drogon の `client_max_body_size` に伝播し、DB 側の別制限はありません）。
 - Windows
   - 既定 DB: `%LOCALAPPDATA%\karing\karing.db`
 - 環境変数の例:
-  - パス系: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_BASE_PATH`
-  - 制限系: `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`
-  - フラグ: `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`
+  - パス系: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_BASE_URL`（`KARING_BASE_PATH` は互換エイリアス）
+  - 制限系: `KARING_LIMIT`
+  - フラグ: `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_WEB_UI`
+  - ログ: `KARING_LOG_LEVEL`（`TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`/`FATAL`/`NONE`）
+- CLI オプション: `--enable-web` / `--disable-web`, `--log-level <level>`
+- JSON 設定: `storage.web_enabled` で Web UI を有効/無効化、`storage.upload_limit` でボディ上限、`log.log_level` でログレベル（`NONE` で無効化）を指定できます。
 - 詳細は `docs/config-ja.md` を参照
 
 
@@ -70,7 +74,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 - `GET /web` — 将来提供予定の Web UI コンテンツ用プレースホルダー（現在はダミー JSON を返却）。
 
 備考
-- ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/search` でも到達可能。
+- ベースURL指定時は `<base_url>`、`<base_url>/health`、`<base_url>/search` でも到達可能。
 - 認証は `X-API-Key` / `?api_key=`（ロール: user/admin）。`docs/config-ja.md` を参照。
 
 認可ポリシー
@@ -166,7 +170,7 @@ cmake --install build --prefix /usr/local
 - バイナリ: Release（タグ v*）に添付 / Actions の Artifacts から取得可能
   - ファイル名: `karing-ubuntu`（Linux）, `karing-macos`（macOS）
 - Docker: GHCR `ghcr.io/recelsus/karing`（branch/sha/semver タグ）
-  - コンテナは以下の環境変数を認識: `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
+  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`, `KARING_WEB_UI`, `KARING_LOG_LEVEL`
   - `--config` を使う場合は設定ファイルをバインドマウントし、`--config /etc/karing/karing.json` のように明示的に渡してください。
   - Dockerfile 既定: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing`（`-e` または compose の `environment:` で上書き可）
 

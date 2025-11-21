@@ -1,7 +1,6 @@
 #include "health_controller.h"
 #include <drogon/drogon.h>
 #include "utils/options.h"
-#include "utils/limits.h"
 #include "version.h"
 
 namespace karing::controllers {
@@ -15,17 +14,20 @@ void health_controller::health(const drogon::HttpRequestPtr& req, std::function<
   out["limit_build"] = options_state.build_limit();
   out["limit_runtime"] = options_state.runtime_limit();
   out["limit_max"] = KARING_MAX_LIMIT;
-  // sizes
+  // HTTP request body limit
   Json::Value sizes(Json::objectValue);
-  sizes["max_file_bytes"] = options_state.max_file_bytes();
-  sizes["max_text_bytes"] = options_state.max_text_bytes();
-  sizes["hard_file_bytes"] = KARING_HARD_MAX_FILE_BYTES;
-  sizes["hard_text_bytes"] = KARING_HARD_MAX_TEXT_BYTES;
-  try {
-    auto cfg = drogon::app().getCustomConfig();
+  auto extract_sizes = [&](const Json::Value& cfg) {
+    if (cfg.isMember("storage") && cfg["storage"].isObject() &&
+        cfg["storage"].isMember("upload_limit") && cfg["storage"]["upload_limit"].isInt64()) {
+      sizes["upload_limit"] = cfg["storage"]["upload_limit"].asInt64();
+    }
     if (cfg.isMember("client_max_body_size") && cfg["client_max_body_size"].isInt64()) {
       sizes["client_max_body_size"] = cfg["client_max_body_size"].asInt64();
     }
+  };
+  try {
+    auto cfg = drogon::app().getCustomConfig();
+    extract_sizes(cfg);
   } catch (...) {}
   out["sizes"] = sizes;
   // tls
@@ -36,6 +38,7 @@ void health_controller::health(const drogon::HttpRequestPtr& req, std::function<
   tls["http_port"] = options_state.tls_http_port();
   if (options_state.tls_enabled()) tls["cert"] = options_state.tls_cert_path();
   out["tls"] = tls;
+  out["base_url"] = options_state.base_path();
   out["base_path"] = options_state.base_path();
   auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
   resp->setStatusCode(drogon::k200OK);

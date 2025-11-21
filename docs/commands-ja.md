@@ -16,7 +16,7 @@
 - ベースパスを設定して起動
   - `KARING_BASE_PATH=/myapp ./build/karing`
 - 制限値の上書き
-  - `KARING_LIMIT=100 KARING_MAX_FILE_BYTES=20971520 ./build/karing`
+  - `KARING_LIMIT=100 ./build/karing`
 - テスト用（認証無効/localhost 許可）
   - `KARING_NO_AUTH=1 KARING_ALLOW_LOCALHOST=1 ./build/karing`
 

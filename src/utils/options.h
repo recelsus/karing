@@ -11,15 +11,12 @@ public:
   static runtime_options& instance();
 
   void set_runtime(const std::string& db_path_value, int build_limit_value, int runtime_limit_value,
-                   int max_file_bytes_value, int max_text_bytes_value,
                    bool no_auth_value = false, bool trust_proxy_value = false,
                    bool allow_localhost_value = false);
 
   const std::string& db_path() const;
   int build_limit() const;
   int runtime_limit() const;
-  int max_file_bytes() const;
-  int max_text_bytes() const;
   bool no_auth() const;
   bool trust_proxy() const;
   bool allow_localhost() const;
@@ -39,6 +36,9 @@ public:
   void set_base_path(const std::string& path_value);
   const std::string& base_path() const;
 
+  void set_web_enabled(bool value);
+  bool web_enabled() const;
+
 private:
   runtime_options() = default;
   runtime_options(const runtime_options&) = delete;
@@ -47,8 +47,6 @@ private:
   std::string db_path_storage;
   int build_limit_storage = 100;
   int runtime_limit_storage = 100;
-  int max_file_bytes_storage = 20971520;
-  int max_text_bytes_storage = 10485760;
   bool no_auth_storage = false;
   bool trust_proxy_storage = false;
   bool allow_localhost_storage = false;
@@ -60,6 +58,7 @@ private:
   std::string tls_cert_path_storage;
   std::string tls_key_path_storage;
   std::string base_path_storage = "/";
+  bool web_enabled_storage = true;
   mutable std::mutex state_mutex;
 };
 

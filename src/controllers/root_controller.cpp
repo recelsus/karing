@@ -11,6 +11,7 @@ void root_controller::root(const drogon::HttpRequestPtr& req, std::function<void
   Json::Value data;
   data["service"] = "karing";
   data["version"] = KARING_VERSION;
+  data["base_url"] = options_state.base_path();
   data["base_path"] = options_state.base_path();
   return cb(karing::http::ok(data));
 }

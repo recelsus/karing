@@ -13,19 +13,18 @@ static std::string build_with_port(int port) {
     {
       "address": "0.0.0.0",
       "port": )JSON") + std::to_string(port) + std::string(R"JSON(,
-      "https": false
+      "https": false,
+      "base_url": "/"
     }
   ],
   "log": {
     "log_level": "INFO",
     "log_path": "./logs"
   },
-  "client_max_body_size": 20971520,
-  "karing": {
+  "storage": {
     "limit": 100,
-    "max_file_bytes": 20971520,
-    "max_text_bytes": 10485760,
-    "base_path": "/"
+    "upload_limit": 20971520,
+    "web_enabled": true
   },
   "db_clients": []
 })JSON");
@@ -43,12 +42,18 @@ std::string drogon_build_config_json_tls(int https_port, bool https,
                                         int http_port,
                                         bool require_tls) {
   if (!https) return build_with_port(https_port);
-  std::string listeners = "[ { \"address\": \"0.0.0.0\", \"port\": " + std::to_string(https_port) + ", \"https\": true, \"cert\": \"" + cert + "\", \"key\": \"" + key + "\" }";
+  std::string listeners = "[ { \"address\": \"0.0.0.0\", \"port\": " + std::to_string(https_port) +
+                         ", \"https\": true, \"cert\": \"" + cert + "\", \"key\": \"" + key +
+                         "\", \"base_url\": \"/\" }";
   if (http_port > 0) {
-    listeners += ", { \"address\": \"0.0.0.0\", \"port\": " + std::to_string(http_port) + ", \"https\": false }";
+    listeners += ", { \"address\": \"0.0.0.0\", \"port\": " + std::to_string(http_port) +
+                 ", \"https\": false, \"base_url\": \"/\" }";
   }
   listeners += " ]";
-  std::string j = std::string("{\n  \"app\": {\"name\": \"karing\", \"threads\": 0, \"require_tls\": ") + (require_tls?"true":"false") + "},\n  \"listeners\": " + listeners + ",\n  \"log\": {\"log_level\": \"INFO\", \"log_path\": \"./logs\"},\n  \"client_max_body_size\": 20971520,\n  \"karing\": {\"limit\": 100, \"max_file_bytes\": 20971520, \"max_text_bytes\": 10485760},\n  \"db_clients\": []\n}";
+  std::string j = std::string("{\n  \"app\": {\"name\": \"karing\", \"threads\": 0, \"require_tls\": ") +
+                 (require_tls?"true":"false") +
+                 "},\n  \"listeners\": " + listeners +
+                 ",\n  \"log\": {\"log_level\": \"INFO\", \"log_path\": \"./logs\"},\n  \"storage\": {\"limit\": 100, \"upload_limit\": 20971520, \"web_enabled\": true},\n  \"db_clients\": []\n}";
   return j;
 }
 
