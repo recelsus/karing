@@ -37,7 +37,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 
 - バイナリは `0.0.0.0:8080`, limit=100, `./logs` などのデフォルトを内蔵しており、設定ファイルなしで起動できます。
 - 設定ファイル（任意）: `--config /path/to/karing.json` を指定した場合のみ Drogon 互換 JSON を読み込みます。テンプレートは `config/karing.json` に同梱され、`make install` では `${prefix}/etc/karing/karing.json` に配置されます（使用時は常に `--config` を渡してください）。既定の階層に存在しないキーは無視され、記述した項目のみ上書きされます。
-- 優先度: 組込みデフォルト < 設定ファイル (`--config`) < 環境変数 < 実行時オプション。設定ファイルを読み込んでも、対応する環境変数やCLI引数があればそちらが優先されます。
+- 優先度: 組込みデフォルト < 環境変数 < 実行時オプション（`--config` を含む）。設定ファイルを読み込んでも、対応する CLI 引数（例: `--port`, `--limit`）があればそちらが優先されます。
 - 既定パス（XDG 準拠）:
   - DB: `$XDG_DATA_HOME/karing/karing.db` または `~/.local/share/karing/karing.db`
   - ログ: `$XDG_STATE_HOME/karing/logs` または `~/.local/state/karing/logs`
@@ -81,9 +81,10 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - `deny` に一致 → 常に拒否（APIキーが正しくても拒否）。
   - `allow` に一致 → 認証を開始せず許可（APIキーの有無/正否は不問）。
   - どちらでもない → APIキーを要求（十分なロールが必要）。
+- 管理エンドポイント（`/admin/auth`）は `ip_rules` の `permission=allow` に登録された IP のみ許可され、APIキーは無視されます。
 - エンドポイント毎の要件:
   - `GET /`, `GET /health`, `GET/POST /search`, `POST /`（任意の action）→ `user` 以上
-  - `GET /admin/auth` → `admin`（ただし allow に一致する場合はIP優先で通過）
+  - `/admin/auth` → allow に登録した IP のみ
 
 管理CLI（APIキー / IP制御）
 --------------------------
@@ -91,17 +92,17 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 `karing` バイナリから APIキー と IP許可/拒否リストを操作できます。
 
 - APIキー
-  - `karing keys add --label "CI from repo A"`                   # APIキーを自動生成して追加。デフォルトrole=user、ラベルを付与
-  - `karing keys add --role admin --label "ops emergency"`       # 管理者権限(admin)のキーを自動生成して追加
-  - `karing keys add --disabled --label "staged key"`            # 生成だけして無効化状態で作成（ロールアウト前の準備）
-  - `karing keys set-role 42 user`                                # 既存キー(id=42)を user ロールに降格
-  - `karing keys set-role 42 admin`                               # 既存キー(id=42)を admin ロールに昇格
-  - `karing keys set-label 42 "CI from repo B"`                   # 既存キー(id=42)のラベルを更新
-  - `karing keys disable 42`                                      # 既存キー(id=42)を無効化（enabled=0）※復活可能
-  - `karing keys enable 42`                                       # 無効化したキーを再度有効化（enabled=1）
-  - `karing keys rm 42`                                           # 既存キー(id=42)を削除（既定は論理削除でなく物理なら--hardを付ける）
-  - `karing keys rm 42 --hard`                                    # 既存キー(id=42)を物理削除（DBから完全に除去）
-  - `karing keys add --label "will show secret once" --json`      # 生成結果をJSONで受け取る（secretは初回のみ出力）
+  - `karing key add --label "CI from repo A"`                   # APIキーを自動生成して追加。デフォルトrole=user、ラベルを付与
+  - `karing key add --role admin --label "ops emergency"`       # 管理者権限(admin)のキーを自動生成して追加
+  - `karing key add --disabled --label "staged key"`            # 生成だけして無効化状態で作成（ロールアウト前の準備）
+  - `karing key set-role 42 user`                                # 既存キー(id=42)を user ロールに降格
+  - `karing key set-role 42 admin`                               # 既存キー(id=42)を admin ロールに昇格
+  - `karing key set-label 42 "CI from repo B"`                   # 既存キー(id=42)のラベルを更新
+  - `karing key disable 42`                                      # 既存キー(id=42)を無効化（enabled=0）※復活可能
+  - `karing key enable 42`                                       # 無効化したキーを再度有効化（enabled=1）
+  - `karing key rm 42`                                           # 既存キー(id=42)を削除（既定は論理削除でなく物理なら--hardを付ける）
+  - `karing key rm 42 --hard`                                    # 既存キー(id=42)を物理削除（DBから完全に除去）
+  - `karing key add --label "will show secret once" --json`      # 生成結果をJSONで受け取る（secretは初回のみ出力）
     # → {"id":..., "role":"user","label":"...","enabled":1,"secret":"..."}
 
 - IPルール（単一テーブルで `permission=allow|deny`）
@@ -130,6 +131,9 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
     }
     ```
   - 表示された `id` は `karing ip del <id>` で削除できます（互換のため `allow:<id>` 形式も利用可）。
+- `POST /admin/auth` — Web UI から利用する設定管理 API。`action` と各種フィールドを JSON で渡します。
+  - APIキー: `create_api_key`, `set_api_key_role`, `set_api_key_label`, `set_api_key_enabled`（または `enable_api_key` / `disable_api_key`）, `delete_api_key`
+  - IPルール: `add_ip_rule`, `update_ip_rule`, `delete_ip_rule`
 
 レスポンス形式
 --------------

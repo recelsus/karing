@@ -59,7 +59,7 @@ static std::string make_temp_db_path(const std::string& prefix) {
 TEST_CASE("keys add prints 48-hex", "[cli]") {
   std::string db = make_temp_db_path("cli1");
   int code = 0;
-  std::string out = run_read_stdout(std::string("./karing keys add --data ") + db, code);
+  std::string out = run_read_stdout(std::string("./karing key add --data ") + db, code);
   REQUIRE(code == 0);
   std::string key = last_non_empty_line(out);
   REQUIRE(key.size() == 48);
@@ -85,7 +85,7 @@ TEST_CASE("ip add normalises CIDR", "[cli]") {
 TEST_CASE("keys list handles empty label", "[cli]") {
   std::string db = make_temp_db_path("cli3");
   int code = 0;
-  std::string json = run_read_stdout(std::string("./karing keys add --json --data ") + db, code);
+  std::string json = run_read_stdout(std::string("./karing key add --json --data ") + db, code);
   REQUIRE(code == 0);
   std::string line = last_non_empty_line(json);
   auto id_pos = line.find("\"id\":");
@@ -99,11 +99,11 @@ TEST_CASE("keys list handles empty label", "[cli]") {
   REQUIRE(secret_end != std::string::npos);
   std::string key = line.substr(secret_pos + 11, secret_end - (secret_pos + 11));
 
-  std::string disable = run_read_stdout(std::string("./karing keys disable ") + std::to_string(id) + " --data " + db, code);
+  std::string disable = run_read_stdout(std::string("./karing key disable ") + std::to_string(id) + " --data " + db, code);
   REQUIRE(code == 0);
   REQUIRE(disable.find("disabled") != std::string::npos);
 
-  std::string out = run_read_stdout(std::string("./karing keys list --data ") + db, code);
+  std::string out = run_read_stdout(std::string("./karing key list --data ") + db, code);
   REQUIRE(code == 0);
   REQUIRE(out.find("id\tkey\tlabel\trole\tenabled\tcreated_at\tlast_used_at\tlast_ip") != std::string::npos);
   REQUIRE(out.find(key) != std::string::npos);

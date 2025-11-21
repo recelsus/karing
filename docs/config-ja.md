@@ -1,6 +1,6 @@
 # 設定
 
-Karing は JSON を用意しなくても動作できるようデフォルトを全てバイナリに埋め込んでいます。Drogon 互換の `karing.json` を読み込みたい場合は `--config /path/to/karing.json` を明示的に指定してください（サンプルは `config/karing.json` に同梱、`make install` では `${prefix}/etc/karing/karing.json` に配置されます）。既定の階層に存在しないキーは無視され、記述した項目のみ上書きされます。優先度は「組込みデフォルト < 設定ファイル (`--config`) < 環境変数 < 実行時オプション」です。
+Karing は JSON を用意しなくても動作できるようデフォルトを全てバイナリに埋め込んでいます。Drogon 互換の `karing.json` を読み込みたい場合は `--config /path/to/karing.json` を明示的に指定してください（サンプルは `config/karing.json` に同梱、`make install` では `${prefix}/etc/karing/karing.json` に配置されます）。既定の階層に存在しないキーは無視され、記述した項目のみ上書きされます。優先度は「組込みデフォルト < 環境変数 < 実行時オプション（`--config` を含む）」です。
 
 ## DB path defaults
 - Linux/macOS: `$XDG_DATA_HOME/karing/karing.db` または `~/.local/share/karing/karing.db`

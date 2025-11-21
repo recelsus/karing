@@ -40,7 +40,7 @@ Configuration
 
 - Built-in defaults keep the binary runnable without any files: listens on `0.0.0.0:8080`, limit 100, logs in `./logs`, and the SQLite file is created next to the binary (or the XDG locations below when available).
 - Config file (optional): pass `--config /path/to/karing.json` to load a Drogon-compatible JSON. A sample lives at `config/karing.json`; `make install` also drops it at `${prefix}/etc/karing/karing.json`. Only the provided keys override defaults (unknown keys are ignored), so you can keep the file minimal.
-- Runtime precedence per field: compiled defaults < config file (`--config`) < environment variables < CLI flags. CLI overrides such as `--port`/`--tls` always win.
+- Runtime precedence per field: compiled defaults < environment variables < CLI flags (including `--config`). When both `--config` and field-specific CLI flags are present, the dedicated flag (e.g., `--port`, `--limit`) wins.
 - Defaults (XDG):
   - DB: `$XDG_DATA_HOME/karing/karing.db` or `~/.local/share/karing/karing.db` if `XDG_DATA_HOME` is unset. When both fail, `karing.db` is created next to the executable.
   - Logs: `$XDG_STATE_HOME/karing/logs` or `~/.local/state/karing/logs` if `XDG_STATE_HOME` is unset.
@@ -82,9 +82,10 @@ Auth Policy
   - `deny` match → always reject (even with a valid API key).
   - `allow` match → bypass auth (accepted regardless of API key).
   - neither → require API key with sufficient role.
+- Admin endpoints (`/admin/auth`) require the caller IP to match an `ip_rules` entry with `permission=allow`. API keys are ignored for these routes.
 - Required roles by endpoint:
   - `GET /`, `GET /health`, `GET/POST /search`, `POST /` (any action) → `user` or `admin`
-  - `GET /admin/auth` → `admin` (unless IP allow bypass applies)
+  - `/admin/auth` → allow-listed IP only
 
 Admin CLI (API Keys & IP Control)
 ---------------------------------
@@ -92,17 +93,17 @@ Admin CLI (API Keys & IP Control)
 API key management and IP allow/deny lists can be managed via the `karing` CLI.
 
 - API keys
-  - `karing keys add --label "CI from repo A"`                   # Auto-generate and add an API key. Default role=user; attach label
-  - `karing keys add --role admin --label "ops emergency"`       # Generate an admin key (role=admin)
-  - `karing keys add --disabled --label "staged key"`            # Generate but start disabled (pre-rollout staging)
-  - `karing keys set-role 42 user`                                # Downgrade existing key (id=42) to user role
-  - `karing keys set-role 42 admin`                               # Promote existing key (id=42) to admin
-  - `karing keys set-label 42 "CI from repo B"`                   # Update label for existing key (id=42)
-  - `karing keys disable 42`                                      # Disable existing key (enabled=0), reversible
-  - `karing keys enable 42`                                       # Re-enable a previously disabled key (enabled=1)
-  - `karing keys rm 42`                                           # Remove key (logical by default; use --hard for physical delete)
-  - `karing keys rm 42 --hard`                                    # Physically delete key (fully removed from DB)
-  - `karing keys add --label "will show secret once" --json`      # Output result as JSON; secret is shown only on creation
+  - `karing key add --label "CI from repo A"`                   # Auto-generate and add an API key. Default role=user; attach label
+  - `karing key add --role admin --label "ops emergency"`       # Generate an admin key (role=admin)
+  - `karing key add --disabled --label "staged key"`            # Generate but start disabled (pre-rollout staging)
+  - `karing key set-role 42 user`                                # Downgrade existing key (id=42) to user role
+  - `karing key set-role 42 admin`                               # Promote existing key (id=42) to admin
+  - `karing key set-label 42 "CI from repo B"`                   # Update label for existing key (id=42)
+  - `karing key disable 42`                                      # Disable existing key (enabled=0), reversible
+  - `karing key enable 42`                                       # Re-enable a previously disabled key (enabled=1)
+  - `karing key rm 42`                                           # Remove key (logical by default; use --hard for physical delete)
+  - `karing key rm 42 --hard`                                    # Physically delete key (fully removed from DB)
+  - `karing key add --label "will show secret once" --json`      # Output result as JSON; secret is shown only on creation
     # → {"id":..., "role":"user","label":"...","enabled":1,"secret":"..."}
 
 - IP rules (single table with `permission=allow|deny`)
@@ -131,6 +132,9 @@ Admin Endpoints
     }
     ```
   - Use the `id` values with `karing ip del <id>` (prefixes like `allow:<id>` remain accepted for backward compatibility).
+- `POST /admin/auth` — JSON API for managing API keys and IP allow/deny rules (used by the Web UI). Provide an `action` plus fields:
+  - API keys: `create_api_key`, `set_api_key_role`, `set_api_key_label`, `set_api_key_enabled` (or `enable_api_key`/`disable_api_key`), `delete_api_key`
+  - IP rules: `add_ip_rule`, `update_ip_rule`, `delete_ip_rule`
 
 Response format
 ---------------

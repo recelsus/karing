@@ -52,7 +52,7 @@ void cli_dispatcher::print_help() const {
   std::cout << "karing " << KARING_VERSION << "\n\n"
             << "Usage:\n"
             << "  karing [options]\n"
-            << "  karing keys <subcommand> [args]\n"
+            << "  karing key <subcommand> [args]\n"
             << "  karing ip <subcommand> [args]\n\n"
             << "Options:\n"
             << "  -h, --help          Show this help message\n"
@@ -69,13 +69,13 @@ void cli_dispatcher::print_help() const {
             << "  --check-db          Validate database schema then exit\n"
             << "  --base-path <path>  Override base path prefix\n\n"
             << "Commands:\n"
-            << "  keys list\n"
-            << "  keys add [--role R] [--label L] [--disabled] [--json]\n"
-            << "  keys set-role <id> <role>\n"
-            << "  keys set-label <id> <label>\n"
-            << "  keys disable <id>\n"
-            << "  keys enable <id>\n"
-            << "  keys rm <id> [--hard]\n"
+            << "  key list\n"
+            << "  key add [--role R] [--label L] [--disabled] [--json]\n"
+            << "  key set-role <id> <role>\n"
+            << "  key set-label <id> <label>\n"
+            << "  key disable <id>\n"
+            << "  key enable <id>\n"
+            << "  key rm <id> [--hard]\n"
             << "  ip list [allow|deny]\n"
             << "  ip add <ip-or-cidr> allow|deny\n"
             << "  ip del <id>|allow:<id>|deny:<id>\n\n"
@@ -144,7 +144,7 @@ std::string cli_dispatcher::normalize_ip_pattern(const std::string& input) const
 std::optional<int> cli_dispatcher::handle_new_interface() const {
   if (argc_state < 2) return std::nullopt;
   std::string cmd1 = argv_state[1];
-  if (cmd1 == "keys") {
+  if (cmd1 == "key") {
     if (argc_state < 3) return std::nullopt;
     std::string cmd2 = argv_state[2];
     if (cmd2 == "list" || cmd2 == "ls") {

@@ -1,6 +1,6 @@
 # Configuration
 
-Karing ships with compiled defaults, so the binary starts without any JSON files. To customise Drogon listeners, TLS, or logging, pass `--config /path/to/karing.json` and point it to a Drogon-compatible JSON file (a sample lives at `config/karing.json` and is installed to `${prefix}/etc/karing/karing.json`). Only the keys present in that file override the defaults; unknown keys are ignored. Per-field precedence is: compiled defaults < config file (`--config`) < environment variables < CLI flags.
+Karing ships with compiled defaults, so the binary starts without any JSON files. To customise Drogon listeners, TLS, or logging, pass `--config /path/to/karing.json` and point it to a Drogon-compatible JSON file (a sample lives at `config/karing.json` and is installed to `${prefix}/etc/karing/karing.json`). Only the keys present in that file override the defaults; unknown keys are ignored. Per-field precedence is: compiled defaults < environment variables < CLI flags (including `--config`). Field-specific CLI flags such as `--port` or `--limit` always win over values from `--config`.
 
 ## DB path defaults
 - Linux/macOS: `$XDG_DATA_HOME/karing/karing.db` or `~/.local/share/karing/karing.db`

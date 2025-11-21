@@ -10,13 +10,17 @@ class admin_controller : public drogon::HttpController<admin_controller> {
   ADD_METHOD_TO(admin_controller::list_auth, "/admin/auth", drogon::Get,
                 "karing::filters::https_redirect_filter",
                 "karing::filters::hsts_filter",
-                "karing::filters::auth_filter",
+                "karing::filters::admin_filter");
+  ADD_METHOD_TO(admin_controller::manage_auth, "/admin/auth", drogon::Post,
+                "karing::filters::https_redirect_filter",
+                "karing::filters::hsts_filter",
                 "karing::filters::admin_filter");
   METHOD_LIST_END
 
   void list_auth(const drogon::HttpRequestPtr& req,
                  std::function<void(const drogon::HttpResponsePtr&)>&& cb);
+  void manage_auth(const drogon::HttpRequestPtr& req,
+                   std::function<void(const drogon::HttpResponsePtr&)>&& cb);
 };
 
 }
-
