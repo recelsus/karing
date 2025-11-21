@@ -10,15 +10,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Defaults are baked in the image; override with -e or here.
-      KARING_DATA: "/var/lib/karing/karing.db"     # DB file path
-      KARING_LOG_PATH: "/var/log/karing"           # Logs directory
+      # Defaults are baked in the image; override by uncommenting values below.
+      # KARING_CONFIG: "/etc/karing/karing.json"
+      # KARING_DATA: "/var/lib/karing/karing.db"
+      # KARING_LOG_PATH: "/var/log/karing"
       # KARING_BASE_PATH: /myapp
       # KARING_LIMIT: "100"
       # KARING_MAX_FILE_BYTES: "20971520"
       # KARING_MAX_TEXT_BYTES: "10485760"
-      # KARING_TRUSTED_PROXY: "1"                  # trust proxy headers
-      # KARING_NO_AUTH: "1"                        # dev only (disable auth)
+      # KARING_TRUSTED_PROXY: "1"
+      # KARING_NO_AUTH: "1"
     volumes:
       - karing-data:/var/lib/karing   # data dir
       - karing-logs:/var/log/karing   # logs dir
