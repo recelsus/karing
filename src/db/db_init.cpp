@@ -74,8 +74,6 @@ void init_sqlite_schema_file(const std::string& db_path_str) {
   exec("CREATE INDEX IF NOT EXISTS idx_karing_is_file_created ON karing(is_file, created_at DESC, id DESC);");
   exec("CREATE INDEX IF NOT EXISTS idx_karing_filename ON karing(filename);");
   exec("CREATE INDEX IF NOT EXISTS idx_karing_mime ON karing(mime);");
-  exec("CREATE TABLE IF NOT EXISTS overwrite_log (\n  id INTEGER PRIMARY KEY,\n  replaced_rowid INTEGER NOT NULL,\n  at INTEGER NOT NULL,\n  by_api_key_id INTEGER,\n  from_ip TEXT,\n  FOREIGN KEY (by_api_key_id) REFERENCES api_keys(id)\n    ON UPDATE CASCADE ON DELETE SET NULL\n);");
-  exec("CREATE INDEX IF NOT EXISTS idx_overwrite_at ON overwrite_log(at DESC);");
   exec("COMMIT;");
   // optional FTS: create only if module available and not explicitly disabled; otherwise skip triggers (LIKE fallback is implemented)
   bool disable_fts = false; if (const char* e = std::getenv("KARING_DISABLE_FTS"); e && *e) disable_fts = true;

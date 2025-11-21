@@ -55,10 +55,10 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
 --------------
 
 - `GET /` — 最新1件をRAWで返却（テキスト: text/plain、ファイル: inline）。`id=` 指定でそのIDをRAW。`json=true` でJSON返却。
-- `POST /` — 作成（JSON `{ content }` または multipart）。201 で `{ success: true, message: "Created", id }` を返却。
-- `PUT /?id=` — 全置換
-- `PATCH /?id=` — 部分更新
-- `DELETE /?id=` — 論理削除
+- `POST /` — 単一のマルチアクションエンドポイント。`action` パラメータ（クエリ/JSON/フォーム）で動作を指定します。
+  - JSON (`application/json`): 既定は `action=create_text`。`{ content }` でテキスト作成。`action=update_text`/`patch_text` + `id` で更新/部分更新、`action=delete` + `id` で削除。
+  - Multipart (`multipart/form-data`): 既定は `action=create_file`。ファイルフィールドを送ると作成、`action=update_file`/`patch_file` + `id` で差し替え/部分更新、`action=delete` + `id` で削除。
+  - レスポンスは従来同様で、作成は `201 Created`, 変更は `200 OK`, 削除は `204 No Content`。
 - `GET /health` — サービス情報
 - `GET|POST /search` — 一覧/検索（JSON）
   - パラメータ無し: 最新から `limit` 件（既定は runtime_limit）
@@ -67,6 +67,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - `type` — `text` | `file`（省略時は混在）
   - 返却: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
   - 認可: `GET /search` は user ロールで許可。`POST /search` も読み取り扱い（admin 権限は不要）。
+- `GET /web` — 将来提供予定の Web UI コンテンツ用プレースホルダー（現在はダミー JSON を返却）。
 
 備考
 - ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/search` でも到達可能。
@@ -81,7 +82,7 @@ Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
   - `allow` に一致 → 認証を開始せず許可（APIキーの有無/正否は不問）。
   - どちらでもない → APIキーを要求（十分なロールが必要）。
 - エンドポイント毎の要件:
-  - `GET /`, `GET /health`, `GET/POST /search`, `POST /`, `PUT/PATCH/DELETE /` → `user` 以上
+  - `GET /`, `GET /health`, `GET/POST /search`, `POST /`（任意の action）→ `user` 以上
   - `GET /admin/auth` → `admin`（ただし allow に一致する場合はIP優先で通過）
 
 管理CLI（APIキー / IP制御）

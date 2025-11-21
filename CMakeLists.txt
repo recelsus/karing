@@ -18,13 +18,13 @@ add_executable(karing
   src/db/schema_karing.cpp
   src/db/schema_fts.cpp
   src/db/schema_auth.cpp
-  src/db/schema_overwrite.cpp
   src/db/db_introspection.cpp
   src/utils/embedded_config.cpp
   src/dao/karing_dao.cpp
   src/controllers/karing_controller.cpp
   src/controllers/admin_controller.cpp
   src/controllers/root_controller.cpp
+  src/controllers/web_controller.cpp
   src/controllers/health_controller.cpp
   src/utils/options.cpp
   src/utils/json_response.cpp

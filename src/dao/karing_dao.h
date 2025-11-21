@@ -66,7 +66,7 @@ class KaringDao {
   std::vector<KaringRecord> list_filtered(int limit, const Filters& f);
   long long count_filtered(const Filters& f);
 
-  // Replace (PUT) operations
+  // Replace operations
   bool update_text(int id, const std::string& content);
   bool update_file(int id, const std::string& filename, const std::string& mime, const std::string& data);
 

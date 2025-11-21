@@ -56,10 +56,10 @@ Endpoints
 ----------------------
 
 - `GET /` — raw latest (text/plain or inline file). With `id=`, returns that item inline. Add `json=true` to return JSON instead.
-- `POST /` — create text (JSON `{ content }`) or file (multipart); returns `{ success: true, message: "Created", id }` with 201.
-- `PUT /?id=` — replace
-- `PATCH /?id=` — partial update
-- `DELETE /?id=` — logical delete
+- `POST /` — multi-purpose endpoint. Provide an `action` parameter (query, JSON field, or form field).
+  - JSON (`application/json`): default `action=create_text`. Supply `{ content }` to create text. Use `action=update_text`/`patch_text` with `id` to replace or patch existing text. `action=delete` with `id` performs logical delete.
+  - Multipart (`multipart/form-data`): default `action=create_file`. Upload a file field to create file entries. Use `action=update_file`/`patch_file` with `id` to replace or patch files. `action=delete` with `id` is also accepted via multipart form fields.
+  - Responses mirror previous verbs: creates return `{ success: true, message: "Created", id }` (201), other actions return `{ success: true, ... }` or 204 for delete.
 - `GET /health` — service/build/limits/TLS/base_path
 - `GET|POST /search` — list/search API (JSON only)
   - No params: latest items up to `limit` (default: runtime limit)
@@ -68,6 +68,7 @@ Endpoints
   - `type` — `text` | `file` (optional filter)
   - Response: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
   - Auth: `GET /search` is open to user-level keys; `POST /search` is also treated as read-only (no admin role required).
+- `GET /web` — placeholder endpoint for the future Web UI bundle (currently returns a JSON stub).
 
 Notes
 - Base path support: the same endpoints are available under `<base_path>`, e.g., `/myapp`, `/myapp/health`, `/myapp/search`.
@@ -82,7 +83,7 @@ Auth Policy
   - `allow` match → bypass auth (accepted regardless of API key).
   - neither → require API key with sufficient role.
 - Required roles by endpoint:
-  - `GET /`, `GET /health`, `GET/POST /search`, `POST /`, `PUT/PATCH/DELETE /` → `user` or `admin`
+  - `GET /`, `GET /health`, `GET/POST /search`, `POST /` (any action) → `user` or `admin`
   - `GET /admin/auth` → `admin` (unless IP allow bypass applies)
 
 Admin CLI (API Keys & IP Control)
