@@ -18,6 +18,7 @@ services:
       # KARING_LIMIT: "100"
       # KARING_TRUSTED_PROXY: "1"
       # KARING_NO_AUTH: "1"
+      KARING_WEB_UI: "1"
     volumes:
       - karing-data:/var/lib/karing   # data dir
       - karing-logs:/var/log/karing   # logs dir

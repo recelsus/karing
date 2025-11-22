@@ -17,3 +17,4 @@ services:
       # KARING_LIMIT: "100"
       # KARING_TRUSTED_PROXY: "1"
       # KARING_NO_AUTH: "1"
+      KARING_WEB_UI: "1"
