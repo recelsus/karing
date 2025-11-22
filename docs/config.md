@@ -10,7 +10,7 @@ Karing ships with compiled defaults, so the binary starts without any JSON files
 
 ## Key fields (`karing.json`)
 - `app`: Drogon app settings; supports `require_tls` and `trusted_proxies`
-- `listeners`: address/port, TLS cert/key entries, and optional `base_url`
+- `listeners`: address/port, TLS cert/key entries, and optional `base_url` (single object or array; lone objects are auto-wrapped)
 - `log`: `log_level`, `log_path`
 - `storage` (app-specific):
   - `limit`: per-request list limit (clamped by build cap)

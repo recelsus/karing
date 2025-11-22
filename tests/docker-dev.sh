@@ -33,7 +33,7 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   cat >"$CONFIG_PATH" <<'JSON'
 {
   "app": { "name": "karing", "threads": 1 },
-  "listeners": [ { "address": "0.0.0.0", "port": 8080, "https": false, "base_url": "/" } ],
+  "listeners": { "address": "0.0.0.0", "port": 8080, "https": false, "base_url": "/" },
   "log": { "log_level": "INFO", "log_path": "./logs" },
   "storage": { "limit": 10, "upload_limit": 20971520 },
   "db_clients": []

@@ -136,6 +136,19 @@ const Json::Value* find_storage(const Json::Value& root) {
   return nullptr;
 }
 
+void normalize_listeners(Json::Value& root) {
+  if (!root.isObject() || !root.isMember("listeners")) return;
+  auto& listeners = root["listeners"];
+  if (listeners.isObject()) {
+    Json::Value arr(Json::arrayValue);
+    arr.append(listeners);
+    listeners = arr;
+  } else if (!listeners.isArray() && !listeners.isNull()) {
+    LOG_WARN << "Ignoring malformed 'listeners' override";
+    root.removeMember("listeners");
+  }
+}
+
 void migrate_legacy_karing(Json::Value& root) {
   if (!root.isObject()) return;
   if (root.isMember("karing") && root["karing"].isObject()) {
@@ -281,10 +294,12 @@ int bootstrap::execute() {
     Json::Value overrides;
     if (!parse_json_file(config_full, overrides)) return 1;
     migrate_legacy_karing(overrides);
+    normalize_listeners(overrides);
     merge_known(drogon_config, overrides);
   }
 
   migrate_legacy_karing(drogon_config);
+  normalize_listeners(drogon_config);
   Json::Value* storage_config = ensure_storage(drogon_config);
   if (!(*storage_config).isMember("limit")) {
     (*storage_config)["limit"] = 100;
