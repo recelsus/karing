@@ -129,3 +129,5 @@ CPMCache/
 .env.*
 dist/
 
+scripts/*.jpeg
+
