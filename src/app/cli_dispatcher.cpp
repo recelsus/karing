@@ -3,7 +3,6 @@
 #include <openssl/rand.h>
 #include <sqlite3.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -11,7 +10,6 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "version.h"
 

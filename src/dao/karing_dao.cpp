@@ -1,7 +1,6 @@
 #include "karing_dao.h"
 #include <sqlite3.h>
 #include <chrono>
-#include "utils/strings.h"
 #include "utils/options.h"
 #include <drogon/drogon.h>
 

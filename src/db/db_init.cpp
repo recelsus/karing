@@ -3,7 +3,6 @@
 #include <fstream>
 #include <sqlite3.h>
 #include <drogon/drogon.h>
-#include "schemas.h"
 
 namespace fs = std::filesystem;
 namespace karing::db {

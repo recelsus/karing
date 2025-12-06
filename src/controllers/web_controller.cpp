@@ -1,6 +1,5 @@
 #include "web_controller.h"
 #include <drogon/drogon.h>
-#include <string>
 #include "utils/options.h"
 
 namespace karing::controllers {

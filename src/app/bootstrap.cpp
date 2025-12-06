@@ -22,7 +22,6 @@
 #include "db/db_introspection.h"
 #include "utils/embedded_config.h"
 #include "utils/options.h"
-#include "utils/limits.h"
 
 #if defined(KARING_BUILD_LIMIT) && defined(KARING_MAX_LIMIT)
 #if KARING_BUILD_LIMIT > KARING_MAX_LIMIT

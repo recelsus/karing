@@ -2,10 +2,7 @@
 #include <drogon/drogon.h>
 #include <sqlite3.h>
 #include <string>
-#include <optional>
 #include <vector>
-#include <algorithm>
-#include <cctype>
 #include <memory>
 #include "utils/options.h"
 #include "utils/json_response.h"
