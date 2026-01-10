@@ -189,7 +189,6 @@ void karing_controller::post_karing(const HttpRequestPtr& req, std::function<voi
   auto& options_state = karing::options::runtime_options::instance();
   dao::KaringDao dao(options_state.db_path());
   const auto& ctype = req->getHeader("content-type");
-  // client_ip removed
 
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject();
@@ -242,7 +241,7 @@ void karing_controller::put_karing(const HttpRequestPtr& req, std::function<void
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
   const auto& ctype = req->getHeader("content-type");
-  // client_ip removed
+
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject();
     if (!json || !(*json)["content"].isString()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
@@ -274,10 +273,11 @@ void karing_controller::patch_karing(const HttpRequestPtr& req, std::function<vo
   auto& options_state = karing::options::runtime_options::instance();
   dao::KaringDao dao(options_state.db_path());
   auto params = req->getParameters();
+
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
   int id = std::stoi(params.at("id"));
   const auto& ctype = req->getHeader("content-type");
-  // client_ip removed
+
   if (ctype.find("application/json") != std::string::npos) {
     auto json = req->getJsonObject(); if (!json) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "JSON required"));
     std::optional<std::string> content;
@@ -322,8 +322,6 @@ void karing_controller::delete_karing(const HttpRequestPtr& req, std::function<v
   resp->setStatusCode(HttpStatusCode::k204NoContent);
   cb(resp);
 }
-
-// restore endpoint removed
 
 void karing_controller::health(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
   auto& options_state = karing::options::runtime_options::instance();

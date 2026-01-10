@@ -36,8 +36,6 @@ struct Db {
 
 KaringDao::KaringDao(std::string db_path) : db_path_(std::move(db_path)) {}
 
-// preallocate_slots removed (no longer used)
-
 int KaringDao::insert_text(const std::string& content) {
   Db db(db_path_);
   if (!db.ok()) { LOG_ERROR << "sqlite open failed at '" << db_path_ << "'"; return -1; }
@@ -250,7 +248,6 @@ bool KaringDao::patch_file(int id, const std::optional<std::string>& filename, c
   return update_file(id, filename.value_or(curFilename), mime.value_or(curMime), data.value_or(curData));
 }
 
-// restore_latest_snapshot removed
 int KaringDao::insert_file(const std::string& filename,
                            const std::string& mime,
                            const std::string& data) {
@@ -364,11 +361,6 @@ sqlite3_finalize(stmt);
 return v;
 }
 
-
-// list_latest_after removed
-
-// search_text removed
-
 bool KaringDao::try_search_fts(const std::string& fts_query, int limit, std::vector<KaringRecord>& v) {
   Db db(db_path_);
   if (!db.ok()) return false;
@@ -396,11 +388,6 @@ bool KaringDao::try_search_fts(const std::string& fts_query, int limit, std::vec
   sqlite3_finalize(stmt);
   return true;
 }
-
-// search_text_like removed
-
-
-
 
 
 std::vector<KaringRecord> KaringDao::list_filtered(int limit, const Filters& f) {
@@ -472,13 +459,6 @@ bool KaringDao::count_search_fts(const std::string& fts_query, long long& out) {
   out = c;
   return true;
 }
-
-// count_search_like removed
-
-
-// try_search_fts_after removed
-
-// search_text_like_after removed
 
 int KaringDao::count_active() {
   Db db(db_path_);

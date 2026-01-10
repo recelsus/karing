@@ -74,8 +74,6 @@ class KaringDao {
   bool patch_text(int id, const std::optional<std::string>& content);
   bool patch_file(int id, const std::optional<std::string>& filename, const std::optional<std::string>& mime, const std::optional<std::string>& data);
 
-  // restore_latest_snapshot removed
-
  private:
   std::string db_path_;
 };
