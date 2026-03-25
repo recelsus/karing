@@ -4,9 +4,12 @@ on:
   push:
     branches: [ master ]
     paths:
-      - 'src/**'
+      - 'server/**'
+      - 'sqlite/**'
+      - 'cli/**'
       - '.github/**'
       - 'docker/**'
+      - 'CMakeLists.txt'
   workflow_dispatch:
 
 permissions:

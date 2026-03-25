@@ -1,12 +1,17 @@
-name: build
+name: cli
 
 on:
-  # Temporarily disabled from auto triggers; manual only.
+  push:
+    branches: [ master ]
+    paths:
+      - 'cli/**'
+      - 'server/version.h'
+      - 'CMakeLists.txt'
+      - '.github/workflows/build.yml'
   workflow_dispatch: {}
 
 jobs:
-  linux-release:
-    if: ${{ false }}
+  linux-cli:
     runs-on: ubuntu-latest
     container: drogonframework/drogon:latest
     steps:
@@ -14,26 +19,25 @@ jobs:
       - name: Install deps
         run: |
           apt-get update
-          apt-get install -y cmake ninja-build git
+          apt-get install -y cmake ninja-build git pkg-config libcurl4-openssl-dev libjsoncpp-dev
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -Wno-dev
+            -DKARING_BUILD_SERVER=OFF \
+            -DKARING_BUILD_CLI=ON
       - name: Build
         run: cmake --build build -j
       - name: Package artifact
         run: |
           mkdir -p dist/linux
-          cp build/karing dist/linux/karing-ubuntu
-          cp -r config dist/linux/
+          cp build/cli/karing dist/linux/karing-cli-linux
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: karing-ubuntu
+          name: karing-cli-linux
           path: dist/linux
 
-  macos-release:
-    if: ${{ false }}
+  macos-cli:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,36 +46,20 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew install drogon openssl@3
+          brew install curl jsoncpp pkg-config
       - name: Configure
         run: |
-          OPENSSL_ROOT_DIR=$(brew --prefix openssl@3) \
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$OPENSSL_ROOT_DIR
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DKARING_BUILD_SERVER=OFF \
+            -DKARING_BUILD_CLI=ON
       - name: Build
         run: cmake --build build -j
       - name: Package artifact
         run: |
           mkdir -p dist/macos
-          cp build/karing dist/macos/karing-macos
-          cp -r config dist/macos/
+          cp build/cli/karing dist/macos/karing-cli-macos
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: karing-macos
+          name: karing-cli-macos
           path: dist/macos
-
-  release:
-    if: ${{ false }}
-    needs: [ linux-release, macos-release ]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            artifacts/**/karing-*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
