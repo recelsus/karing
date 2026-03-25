@@ -21,7 +21,8 @@ RUN set -eux; \
 FROM ${RUNTIME_IMAGE} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     XDG_DATA_HOME=/var/lib/karing \
-    KARING_DATA=/var/lib/karing/karing.db \
+    KARING_DB_PATH=/var/lib/karing/karing.db \
+    KARING_UPLOAD_PATH=/var/lib/karing/uploads \
     KARING_LOG_PATH=/var/log/karing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -37,15 +38,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libuuid1 \
     sqlite3 && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /root/.config/karing /var/lib/karing /var/log/karing
+    mkdir -p /var/lib/karing /var/log/karing
 COPY --from=builder /opt/runtime/lib/ /usr/local/lib/
 RUN echo /usr/local/lib > /etc/ld.so.conf.d/karing-local.conf && ldconfig
 COPY --from=builder /src/build/karing /usr/local/bin/karing
-COPY config/karing.json /root/.config/karing/karing.json
 EXPOSE 8080
 VOLUME ["/var/lib/karing", "/var/log/karing"]
 ENTRYPOINT ["/usr/local/bin/karing"]
 # Environment variable overrides supported by the app:
-# KARING_CONFIG, KARING_DATA, KARING_LIMIT, KARING_MAX_FILE_BYTES,
-# KARING_MAX_TEXT_BYTES, KARING_NO_AUTH, KARING_TRUSTED_PROXY,
+# KARING_DB_PATH, KARING_UPLOAD_PATH, KARING_LISTEN, KARING_PORT,
+# KARING_LIMIT, KARING_MAX_FILE, KARING_MAX_TEXT, KARING_NO_AUTH, KARING_TRUSTED_PROXY,
 # KARING_ALLOW_LOCALHOST, KARING_BASE_PATH
