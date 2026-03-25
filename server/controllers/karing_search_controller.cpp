@@ -1,0 +1,126 @@
+#include "karing_search_controller.h"
+
+#include <optional>
+#include <string>
+
+#include <drogon/drogon.h>
+
+#include "dao/karing_dao.h"
+#include "utils/json_response.h"
+#include "utils/options.h"
+#include "utils/search_query.h"
+
+using drogon::HttpRequestPtr;
+using drogon::HttpResponsePtr;
+using drogon::HttpStatusCode;
+
+namespace karing::controllers {
+
+namespace {
+
+Json::Value record_to_json(const dao::KaringRecord& r) {
+  Json::Value j;
+  j["id"] = r.id;
+  j["is_file"] = r.is_file;
+  if (!r.is_file && !r.content.empty()) j["content"] = r.content;
+  if (!r.filename.empty()) j["filename"] = r.filename;
+  if (!r.mime.empty()) j["mime"] = r.mime;
+  j["created_at"] = Json::Int64(r.created_at);
+  if (r.updated_at) j["updated_at"] = Json::Int64(*r.updated_at);
+  return j;
+}
+
+std::optional<dao::SortField> parse_sort_field(const std::string& value) {
+  if (value.empty() || value == "id") return dao::SortField::id;
+  if (value == "stored_at") return dao::SortField::stored_at;
+  if (value == "updated_at") return dao::SortField::updated_at;
+  return std::nullopt;
+}
+
+std::optional<bool> parse_sort_order(const std::string& value) {
+  if (value.empty() || value == "desc") return true;
+  if (value == "asc") return false;
+  return std::nullopt;
+}
+
+}  // namespace
+
+void karing_search_controller::search(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
+  const auto& options = karing::options::current();
+  dao::KaringDao dao(options.db_path, options.upload_path);
+  auto params = req->getParameters();
+  auto get_str = [&](const char* key) -> std::string {
+    auto it = params.find(key);
+    return it != params.end() ? it->second : std::string();
+  };
+  auto get_int = [&](const char* key, int fallback) -> int {
+    auto it = params.find(key);
+    if (it != params.end()) {
+      try {
+        return std::stoi(it->second);
+      } catch (...) {
+      }
+    }
+    return fallback;
+  };
+
+  int limit = get_int("limit", options.limit);
+  limit = std::min(std::max(1, limit), options.limit);
+  std::string q = get_str("q");
+  const auto sort = parse_sort_field(get_str("sort"));
+  if (!sort.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid sort"));
+  const auto order_desc = parse_sort_order(get_str("order"));
+  if (!order_desc.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid order"));
+
+  std::optional<int> is_file;
+  std::string type = get_str("type");
+  if (type == "text") is_file = 0;
+  else if (type == "file") is_file = 1;
+
+  std::vector<dao::KaringRecord> list;
+  Json::Value meta(Json::objectValue);
+  if (!q.empty()) {
+    auto qb = karing::search::build_fts_query(q);
+    if (qb.err) {
+      Json::Value detail;
+      detail["reason"] = *qb.err;
+      return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid search query", detail));
+    }
+    bool ok = false;
+    if (is_file.has_value()) {
+      std::vector<dao::KaringRecord> tmp;
+      ok = dao.try_search_fts(qb.fts, limit, *sort, *order_desc, tmp);
+      for (auto& r : tmp) {
+        if (static_cast<int>(r.is_file) == *is_file) list.push_back(std::move(r));
+      }
+    } else {
+      ok = dao.try_search_fts(qb.fts, limit, *sort, *order_desc, list);
+    }
+    if (!ok) return cb(karing::http::error(HttpStatusCode::k503ServiceUnavailable, "E_FTS_UNAVAILABLE", "Full-text search unavailable"));
+    meta["count"] = static_cast<int>(list.size());
+    meta["limit"] = limit;
+  } else {
+    if (is_file.has_value()) {
+      dao::KaringDao::Filters filters;
+      filters.is_file = *is_file;
+      filters.sort = *sort;
+      filters.order_desc = *order_desc;
+      list = dao.list_filtered(limit, filters);
+      meta["total"] = Json::Int64(dao.count_filtered(filters));
+    } else {
+      list = dao.list_latest(limit, *sort, *order_desc);
+      meta["total"] = Json::Int64(dao.count_active());
+    }
+    meta["count"] = static_cast<int>(list.size());
+    meta["limit"] = limit;
+  }
+
+  meta["sort"] = get_str("sort").empty() ? "id" : get_str("sort");
+  meta["order"] = get_str("order").empty() ? "desc" : get_str("order");
+
+  Json::Value data = Json::arrayValue;
+  for (auto& record : list) data.append(record_to_json(record));
+  return cb(karing::http::ok(data, meta));
+}
+
+}  // namespace karing::controllers
