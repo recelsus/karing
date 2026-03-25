@@ -10,18 +10,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      KARING_DB_PATH: "/var/lib/karing/karing.db"  # DB file path
+      KARING_DB_PATH: "/var/lib/karing/karing.sqlite"
       KARING_UPLOAD_PATH: "/var/lib/karing/uploads"
       KARING_LOG_PATH: "/var/log/karing"
       # KARING_BASE_PATH: /myapp
       # KARING_LIMIT: "100"
-      # KARING_MAX_FILE: "20971520"
-      # KARING_MAX_TEXT: "10485760"
-      # KARING_TRUSTED_PROXY: "1"
-      # KARING_NO_AUTH: "1"
+      # KARING_MAX_FILE: "20"
+      # KARING_MAX_TEXT: "5"
     volumes:
-      - karing-data:/var/lib/karing   # data dir
-      - karing-logs:/var/log/karing   # logs dir
+      - karing-data:/var/lib/karing
+      - karing-logs:/var/log/karing
 
 volumes:
   karing-data:

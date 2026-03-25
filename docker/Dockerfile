@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /src
 COPY . .
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    -DKARING_BUILD_SERVER=ON \
+    -DKARING_BUILD_CLI=OFF \
  && cmake --build build -j \
- && strip build/karing
+ && strip build/server/karing-server
 RUN set -eux; \
     mkdir -p /opt/runtime/lib; \
     find /usr -name 'libdrogon.so*' -exec cp -a '{}' /opt/runtime/lib/ ';' ; \
@@ -21,7 +23,7 @@ RUN set -eux; \
 FROM ${RUNTIME_IMAGE} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     XDG_DATA_HOME=/var/lib/karing \
-    KARING_DB_PATH=/var/lib/karing/karing.db \
+    KARING_DB_PATH=/var/lib/karing/karing.sqlite \
     KARING_UPLOAD_PATH=/var/lib/karing/uploads \
     KARING_LOG_PATH=/var/log/karing
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -41,11 +43,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mkdir -p /var/lib/karing /var/log/karing
 COPY --from=builder /opt/runtime/lib/ /usr/local/lib/
 RUN echo /usr/local/lib > /etc/ld.so.conf.d/karing-local.conf && ldconfig
-COPY --from=builder /src/build/karing /usr/local/bin/karing
+COPY --from=builder /src/build/server/karing-server /usr/local/bin/karing-server
 EXPOSE 8080
 VOLUME ["/var/lib/karing", "/var/log/karing"]
-ENTRYPOINT ["/usr/local/bin/karing"]
+ENTRYPOINT ["/usr/local/bin/karing-server"]
 # Environment variable overrides supported by the app:
-# KARING_DB_PATH, KARING_UPLOAD_PATH, KARING_LISTEN, KARING_PORT,
-# KARING_LIMIT, KARING_MAX_FILE, KARING_MAX_TEXT, KARING_NO_AUTH, KARING_TRUSTED_PROXY,
-# KARING_ALLOW_LOCALHOST, KARING_BASE_PATH
+# KARING_DB_PATH, KARING_UPLOAD_PATH, KARING_LOG_PATH,
+# KARING_LISTEN, KARING_PORT, KARING_LIMIT, KARING_MAX_FILE, KARING_MAX_TEXT, KARING_BASE_PATH

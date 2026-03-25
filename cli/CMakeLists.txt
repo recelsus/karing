@@ -1,6 +1,6 @@
 find_package(CURL REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(JSONCPP REQUIRED jsoncpp)
+pkg_check_modules(JSONCPP REQUIRED IMPORTED_TARGET jsoncpp)
 
 add_library(karing_cli_core STATIC
   http/http_client.cpp
@@ -21,11 +21,10 @@ add_library(karing_cli_core STATIC
 target_include_directories(karing_cli_core
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${JSONCPP_INCLUDE_DIRS}
 )
 
 target_link_libraries(karing_cli_core
-  PRIVATE karing_project_options CURL::libcurl ${JSONCPP_LIBRARIES}
+  PRIVATE karing_project_options CURL::libcurl PkgConfig::JSONCPP
 )
 
 add_executable(karing
@@ -35,11 +34,10 @@ add_executable(karing
 target_include_directories(karing
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${JSONCPP_INCLUDE_DIRS}
 )
 
 target_link_libraries(karing
-  PRIVATE karing_project_options karing_cli_core CURL::libcurl ${JSONCPP_LIBRARIES}
+  PRIVATE karing_project_options karing_cli_core CURL::libcurl PkgConfig::JSONCPP
 )
 
 install(TARGETS karing RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
