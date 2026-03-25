@@ -1,55 +1,119 @@
-# Build and Install
+# Build & Install
 
-This guide covers building Karing from source and installing it. The examples use the classic out‑of‑source flow: `mkdir build && cd build; cmake .. && make`.
+The following CMake options can be used to choose what to build.
 
-Requirements
-- C++17 toolchain, CMake 3.22+
-- Drogon (dev), SQLite3, JsonCpp, OpenSSL
+- `karing-server` only
+- `karing` CLI only
+- both
 
-Linux (Ubuntu)
+## Dependencies
+
+- C++17 toolchain
+- CMake 3.22+
+- when building the server:
+  - Drogon (dev)
+  - SQLite3
+  - JsonCpp
+- when building the CLI:
+  - libcurl
+  - JsonCpp
+
+#### Linux (Ubuntu)
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential cmake \
-  libdrogon-dev libsqlite3-dev libjsoncpp-dev libssl-dev zlib1g-dev
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j
-sudo make install
+  libdrogon-dev libsqlite3-dev libjsoncpp-dev libcurl4-openssl-dev zlib1g-dev
 ```
 
-macOS (Homebrew)
+#### macOS (Homebrew)
+
 ```bash
-brew update && brew install drogon
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j
-sudo make install
+brew update
+brew install drogon curl jsoncpp sqlite3
 ```
 
-Windows
-- Build with MSVC and vcpkg (TBD). The app probes `%APPDATA%` and `%LOCALAPPDATA%` for config/data paths.
+## Build
 
-Dev builds
+both:
+
 ```bash
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-make -j
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DKARING_BUILD_SERVER=ON \
+  -DKARING_BUILD_CLI=ON
+cmake --build build -j
 ```
 
-Notes
-- Production builds: use `Release` or `RelWithDebInfo`.
-- Optional LTO: `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`.
-- Strip symbols for distribution: `-DCMAKE_INSTALL_DO_STRIP=ON` or `strip build/karing`.
+server only:
 
-Prebuilt binaries
-- GitHub Actions attach Linux/macOS binaries to Releases (tags `v*`) and expose build artifacts for pushes.
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DKARING_BUILD_SERVER=ON \
+  -DKARING_BUILD_CLI=OFF
+cmake --build build -j
+```
 
-Docker
-- Official image is published to GHCR: `ghcr.io/recelsus/karing`.
-- Example run:
-  ```bash
-  docker run --rm -p 8080:8080 \
-    -e KARING_BASE_PATH=/myapp \
-    -v karing-data:/var/lib/karing \
-    ghcr.io/recelsus/karing:latest
-  ```
+CLI only:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DKARING_BUILD_SERVER=OFF \
+  -DKARING_BUILD_CLI=ON
+cmake --build build -j
+```
+
+- both:
+  - `build/server/karing-server`
+  - `build/cli/karing`
+- server only:
+  - `build/server/karing-server`
+- CLI only:
+  - `build/cli/karing`
+
+## Test
+
+```bash
+cmake -S . -B build -DBUILD_TESTING=ON \
+  -DKARING_BUILD_SERVER=ON \
+  -DKARING_BUILD_CLI=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+## Install
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DKARING_BUILD_SERVER=ON \
+  -DKARING_BUILD_CLI=ON
+cmake --build build -j
+sudo cmake --install build --prefix /usr/local
+```
+
+## Notes
+
+- when switching between `server only`, `CLI only`, and `both`, re-run configure against the same `build/` directory
+- `Release` or `RelWithDebInfo` is recommended for production use
+- `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON` may be used if desired
+- `-DCMAKE_INSTALL_DO_STRIP=ON` may be considered for distribution builds
+
+#### Windows
+
+- MSVC + vcpkg is assumed (TBD)
+
+## Prebuilt Binaries
+
+- GitHub Actions artefacts / Release attachments can be used
+- `karing-server` and `karing` can now be handled as separate artefacts
+
+## Docker
+
+- Official GHCR image: `ghcr.io/recelsus/karing`
+- example:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e KARING_BASE_PATH=/myapp \
+  -v karing-data:/var/lib/karing \
+  ghcr.io/recelsus/karing:latest
+```

@@ -1,204 +1,142 @@
-Karing
-=============
+# Karing
 
-Karing は Drogon ベースの軽量な Pastebin 風 API サーバー。
-テキストやファイル(画像・音声)を SQLite に保存し、作成/検索/取得/更新/削除の HTTP API を提供します。単一バイナリで動作し、API キー認証、IP 制御、リバースプロキシ配下（サブパス）や Docker をサポートします。
+## Description
 
-- C++17（Drogon）
-- SQLite（単一ファイル）
-- テキストとファイル（画像/音声）
-- FTS5 検索（テキスト本文とファイル名を対象）
-- API キー認証 + IP allow/deny
-- ベースパスでサブパス公開
-- TLS はリバースプロキシ or アプリで
+DrogonベースのPastebin風APIサーバー。
+テキストやファイルをSQLiteと指定ディレクトリに保存、作成/検索/取得/更新/削除の HTTP API を提供します。
+単一バイナリで動作し、リバースプロキシ配下(サブパス)やDockerをサポートします。
 
-英語版 README は `README.md` を参照してください。
+平たく言えばメモして取り出すだけです
 
-クイックスタート
------------------
+- C++17(Drogon)
+- SQLite(単一ファイル)
+- テキストとファイル(対応MIME-TYPE参照)
+- FTS5検索(テキスト本文とファイル名を対象)
+
+## MIME-TYPE
+
+- テキスト: `text/*`
+- 画像: `image/*`
+- 音声: `audio/*`
+- 動画: `video/*`
+- 文書: `application/pdf`
+- アーカイブ: `application/zip`, `application/gzip`, `application/x-tar`, `application/x-7z-compressed`, `application/vnd.rar`
+- Office系:
+  - `application/msword`
+  - `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+  - `application/vnd.ms-excel`
+  - `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+  - `application/vnd.ms-powerpoint`
+  - `application/vnd.openxmlformats-officedocument.presentationml.presentation`
+
+## Quick Start
 
 - 配布バイナリ
-  - GitHub Actions により Linux/macOS の成果物をアップロードしています。最新の Release から取得できます。
-- Docker（簡易試用に推奨）
+  - GitHub Actions によりLinux/macOSの成果物をアップロードしています。最新の Release から取得できます。
+
+- Docker
   - イメージ: `ghcr.io/recelsus/karing:latest`
   - 例:
-    ```bash
-    docker run --rm -p 8080:8080 \
-      -e KARING_BASE_PATH=/myapp \
-      -e KARING_LIMIT=100 \
-      -v karing-data:/var/lib/karing \
-      ghcr.io/recelsus/karing:latest
-    ```
-- ソースからビルド
-  - `docs/build-ja.md` を参照（Release/Debug、インストール、各 OS 注意点）。
+    `docker run -p 8080:8080 ghcr.io/recelsus/karing:latest`
 
-設定
-----
+- ビルド
+  - `docs/build-ja.md` を参照。
 
-- 設定ファイル: Drogon 互換 JSON（`karing.json`）
-- 探索順（後ろはフォールバック）:
-  - `--config <path>` / `KARING_CONFIG`
-  - `$XDG_CONFIG_HOME/karing/karing.json`
-  - `~/.config/karing/karing.json`
-  - `/etc/karing/karing.json`（POSIX）
-  - `config/karing.json`（同梱デフォルト）
-- Windows
-  - 設定: `%APPDATA%\karing\karing.json`
-  - 既定 DB: `%LOCALAPPDATA%\karing\karing.db`
-- 環境変数が設定を上書き可能（`KARING_BASE_PATH`, `KARING_LIMIT` など）。詳細は `docs/config-ja.md`。
-- 優先度（実行時）: `--config` / `KARING_CONFIG` > ユーザー設定（`$XDG_CONFIG_HOME/karing/karing.json` または `~/.config/karing/karing.json`）> システム（`/etc/karing/karing.json`）> 同梱 `config/karing.json` > 組込みデフォルト。
-  - このアプリは特権（sudo）を要求しない前提のため、既定の設定場所は `/etc` ではなくユーザー設定（`~/.config/karing`）です。Docker イメージでは `/root/.config/karing/karing.json` に配置します。
-- 初回起動: ユーザー設定が未作成の場合、採用された設定をユーザー設定パスにコピーして永続化します。
-- 既定パス（XDG 準拠）:
-  - DB: `$XDG_DATA_HOME/karing/karing.db`（未設定時は `~/.local/share/karing/karing.db`）。
-  - ログ: `$XDG_STATE_HOME/karing/logs`（未設定時は `~/.local/state/karing/logs`）。
-  - 設定ファイル側で絶対パスを明示した場合は、その指定を優先します。
- - 環境変数ショートカット:
-   - `KARING_DATA` は DB の絶対パスを指定（XDG/設定より優先）。
-   - `KARING_LOG_PATH` はログディレクトリを指定（XDG/設定より優先）。
+## Run Options
 
-エンドポイント
---------------
+- サーバー設定は CLI オプションと環境変数だけで与えます。
+- 既定パス:
+  - DB: `/var/lib/karing/karing.sqlite`
+  - フォールバックDB: 既定位置が使えない場合は `$XDG_DATA_HOME/karing/karing.sqlite`
+  - `XDG_DATA_HOME` が無ければ `$HOME/.local/share/karing/karing.sqlite`
+  - upload path: `<db directory>/uploads`
+  - ログ: `$XDG_STATE_HOME/karing/logs`(未設定時は `$HOME/.local/state/karing/logs`)
 
-- `GET /` — 最新1件をRAWで返却（テキスト: text/plain、ファイル: inline）。`id=` 指定でそのIDをRAW。`json=true` でJSON返却。
-- `POST /` — 作成（JSON `{ content }` または multipart）。201 で `{ success: true, message: "Created", id }` を返却。
-- `PUT /?id=` — 全置換
-- `PATCH /?id=` — 部分更新
-- `DELETE /?id=` — 論理削除
-- `GET /health` — サービス情報
-- `GET|POST /search` — 一覧/検索（JSON）
-  - パラメータ無し: 最新から `limit` 件（既定は runtime_limit）
-  - `limit`
-  - `q` — FTS5 クエリ（テキスト: content、ファイル: filename）
-  - `type` — `text` | `file`（省略時は混在）
-  - 返却: `{ success: true, message: "OK", data: [...], meta: { count, limit, total? } }`
-  - 認可: `GET /search` は read で許可。`POST /search` も read として扱います（write 権限は不要）。
+- aruguments:
+  - `KARING_LISTEN`, `KARING_PORT`
+  - `KARING_DB_PATH`, `KARING_UPLOAD_PATH`, `KARING_LOG_PATH`
+  - `KARING_LIMIT`, `KARING_MAX_FILE`, `KARING_MAX_TEXT`
 
-備考
-- ベースパス指定時は `<base_path>`、`<base_path>/health`、`<base_path>/search` でも到達可能。
-- 認証は `X-API-Key` / `?api_key=`（ロール: read/write/admin）。`docs/config-ja.md` を参照。
+- CLI options:
+  - `--listen`, `--port`, `--db-path`, `--upload-path`
+  - `--limit`, `--max-file`, `--max-text`
+  - `--max-file` と `--max-text` は MB 指定
 
-認可ポリシー
-------------
+- 詳細は `docs/option-ja.md` を参照。
 
-- 役割の序列: `read < write < admin`（右が上位）。
-- IPの優先:
-  - `deny` に一致 → 常に拒否（APIキーが正しくても拒否）。
-  - `allow` に一致 → 認証を開始せず許可（APIキーの有無/正否は不問）。
-  - どちらでもない → APIキーを要求（十分なロールが必要）。
-- エンドポイント毎の要件:
-  - `GET /`, `GET /health`, `GET/POST /search` → `read` 以上
-  - `POST /`, `PUT/PATCH/DELETE /` → `write` 以上
-  - `GET /admin/auth` → `admin`（ただし allow に一致する場合はIP優先で通過）
+## Endpoints
 
-管理CLI（APIキー / IP制御）
---------------------------
+- `GET /`
+  - パラメータ無し: 最も新しい1件をrawで返却
+  - `id=<id>`: 指定IDをrawで返却
+  - `json=true`: rawではなくJSON配列で返却
+  - `as=download`: `id`指定時のみattachmentで返却
 
-`karing` バイナリから APIキー と IP許可/拒否リストを操作できます。
+- `POST /`
+  - 新規作成
+  - `application/json`: `{ "content": "..." }`
+  - `multipart/form-data`: file upload
+  - 返却: `201 Created`
 
-- APIキー
-  - `karing keys add --label "CI from repo A"`                   # APIキーを自動生成して追加。デフォルトrole=write、ラベルを付与
-  - `karing keys add --role admin --label "ops emergency"`       # 管理者権限(admin)のキーを自動生成して追加
-  - `karing keys add --disabled --label "staged key"`            # 生成だけして無効化状態で作成（ロールアウト前の準備）
-  - `karing keys set-role 42 admin`                               # 既存キー(id=42)のroleを書き換え：write/read→adminへ
-  - `karing keys set-label 42 "CI from repo B"`                   # 既存キー(id=42)のラベルを更新
-  - `karing keys disable 42`                                      # 既存キー(id=42)を無効化（enabled=0）※復活可能
-  - `karing keys enable 42`                                       # 無効化したキーを再度有効化（enabled=1）
-  - `karing keys rm 42`                                           # 既存キー(id=42)を削除（既定は論理削除でなく物理なら--hardを付ける）
-  - `karing keys rm 42 --hard`                                    # 既存キー(id=42)を物理削除（DBから完全に除去）
-  - `karing keys add --label "will show secret once" --json`      # 生成結果をJSONで受け取る（secretは初回のみ出力）
-    # → {"id":..., "role":"write","label":"...","enabled":1,"secret":"..."}
+- `PUT /?id=<id>`
+  - 既存レコードの上書き
+  - 既存レコードの変更という扱いのため最新としては返りません
 
-- IP許可/拒否
-  - `karing ip add 203.0.113.0/24 allow`                          # 203.0.113.0/24 を許可リストに追加（CIDRそのまま保存）
-  - `karing ip add 203.0.113.10 deny`                             # 単一IPv4を拒否に追加
-  - `karing ip add 192.168.1.5/24 allow`                          # ホスト/プレフィクス形式 → ネットワークアドレス(192.168.1.0/24)に丸めて保存
-  - `karing ip rm allow:12`                                       # 許可テーブルの id=12 を削除（物理削除。論理運用したい場合は disable 推奨）
-  - `karing ip rm deny:7`                                         # 拒否テーブルの id=7 を削除
-  - `karing ip add 203.0.113.10/32 deny`                          # 既存の allow 203.0.113.0/24 と重なるが登録可
-    # （評価時は“最も具体的なプレフィクス”が優先され、この /32 の deny が勝つ）
+- `PATCH /?id=<id>`
+  - 部分更新
+  - JSON: テキスト内容の差し替え
+  - multipart: 既存 file/text-file の rename または file 差し替え
 
-管理エンドポイント
-------------------
+- `DELETE /`
+  - `id` なし: 最新作成レコード1件だけを削除 
+    - 削除対象は「最新かつ作成から10分以内」の場合のみ
+- `DELETE /?id=<id>`
+  - 指定IDの削除
 
-- `GET /admin/auth`（admin）
-  - 現在の認証設定（APIキー一覧、IP許可/拒否リスト）を返却。
-  - レスポンス構造:
-    ```json
-    {
-      "api_keys": [
-        {"id":1,"key":"...","label":"...","enabled":true,"role":"write","created_at":...,"last_used_at":...,"last_ip":"..."}
-      ],
-      "ip_allow": [ {"id":12, "cidr":"203.0.113.0/24", "enabled":true, "created_at":...} ],
-      "ip_deny":  [ {"id":7,  "cidr":"203.0.113.10/32", "enabled":true, "created_at":...} ]
-    }
-    ```
-  - ここで表示される `id` を `karing ip rm allow:<id>` / `deny:<id>` で指定して削除できます。
+- `GET /search`
+  - 一覧または通常検索
+  - `q`: 検索語
+  - `limit`: 返却件数
+  - `type=text|file`: 種別絞り込み
+  - `sort=id|stored_at|updated_at`
+  - `order=asc|desc`
+  - 既定 sort/order は `id desc`
+  - `q` 省略時は `type` `sort` `order` `limit` に従って active レコード一覧を返却
 
-レスポンス形式
---------------
+- `GET /search/live`
+  - インクリメンタルサーチ
+  - `q` 必須
+  - `limit`, `type`, `sort`, `order` を利用可能
+  - 既定 sort/order は `id desc`
 
-- 成功: `{ success: true, message: "OK" | "Created", ... }`
-- 失敗: `{ success: false, code, message, details? }`
+- `GET /health`
+  - サービス状態と DB 情報を JSON で返却
 
-検索とFTS
---------
+- base_path指定時は `<base_path>/`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
 
-- SQLite の FTS5 仮想テーブル `karing_fts` を使用（カラム: テキストは `content`、ファイルは `filename`）。
-- `/search` は GET クエリまたは POST JSON で同じフィールド（q/limit/offset/type）を受け取ります。
-- `KARING_DISABLE_FTS=1` を設定すると FTS を無効化（`q` 付き `/search` は 503）。`q` 無しの最新一覧は動作します。
-- 前方一致の強化: `KARING_FTS_PREFIX` に `"2 3"` のような値を設定すると、2文字/3文字のプレフィックス索引を有効化できます（例: `hel*` のような先頭一致が高速化）。
+リクエスト例とレスポンス例は `docs/requests-ja.md` を参照してください。
 
-インストール（make install）
-----------------------------
+## Search
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-cmake --install build --prefix /usr/local
-```
-- バイナリ: `${prefix}/bin/karing`
-- 既定設定: `${prefix}/etc/karing/karing.json`
+- FTS5は必須。利用できないSQLite環境では起動しません。
+- `/search` は通常検索、`/search/live` はインクリメンタル検索向け。
+- 検索対象はテキスト本文とファイル名。
 
-配布物（バイナリ / Docker）
----------------------------
-
-- バイナリ: Release（タグ v*）に添付 / Actions の Artifacts から取得可能
-  - ファイル名: `karing-ubuntu`（Linux）, `karing-macos`（macOS）
-- Docker: GHCR `ghcr.io/recelsus/karing`（branch/sha/semver タグ）
-  - コンテナは以下の環境変数を認識: `KARING_CONFIG`, `KARING_DATA`, `KARING_LOG_PATH`, `KARING_LIMIT`, `KARING_MAX_FILE_BYTES`, `KARING_MAX_TEXT_BYTES`, `KARING_NO_AUTH`, `KARING_TRUSTED_PROXY`, `KARING_ALLOW_LOCALHOST`, `KARING_BASE_PATH`, `KARING_DISABLE_FTS`
-  - Dockerfile 既定: `KARING_DATA=/var/lib/karing/karing.db`, `KARING_LOG_PATH=/var/log/karing`（`-e` または compose の `environment:` で上書き可）
-
-ドキュメント
-------------
+## Documents
 
 - ビルド/インストール: `docs/build-ja.md`
-- 設定: `docs/config-ja.md`
+- オプション: `docs/option-ja.md`
+- リクエスト/レスポンス: `docs/requests-ja.md`
 - 開発: `docs/README-dev.md`
 - クイック: `docs/README-r.md`
 
-利用ライブラリ
---------------
+## Library
 
-- Drogon（HTTP フレームワーク）
+- Drogon
 - SQLite3
 - JsonCpp
-- OpenSSL（crypto）
 - CMake / Ninja / GitHub Actions
 
-ライセンス
-----------
+## License
 
-- 目的（商用/非商用）を問わず、無償で使用・複製・改変・結合・頒布・サブライセンス・販売が可能です。
-- クレジット表記は任意。
-- 本ソフトウェアは「現状のまま」提供され、商品性・特定目的適合性・非侵害を含むいかなる保証も行いません。作者は一切の責任を負いません。
-
-ツールの都合で SPDX が必要な場合は、MIT 互換（表記任意）として扱って差し支えありません。
-
-不足点 / 今後の候補
---------------------
-
-- テスト未同梱（Catch2/CTest を推奨）
-- レート制限 / リクエストロギングのフィルタ
-- Windows CI / コンテナイメージ（必要に応じて）
-- 健康チェック重複実装の整理（ソース内の重複箇所を削除可能）
+MIT License.
