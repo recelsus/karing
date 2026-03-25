@@ -1,0 +1,8 @@
+#pragma once
+
+namespace karing::db::schema_sql {
+
+inline constexpr const char* kSchemaBaseSql = "@KARING_SCHEMA_BASE_SQL_ESCAPED@";
+inline constexpr const char* kSchemaFtsSql = "@KARING_SCHEMA_FTS_SQL_ESCAPED@";
+
+}
