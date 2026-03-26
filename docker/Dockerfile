@@ -12,9 +12,10 @@ WORKDIR /src
 COPY . .
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DKARING_BUILD_SERVER=ON \
-    -DKARING_BUILD_CLI=OFF \
+    -DKARING_BUILD_CLI=ON \
  && cmake --build build -j \
- && strip build/server/karing-server
+ && strip build/server/karing-server \
+ && strip build/cli/karing
 RUN set -eux; \
     mkdir -p /opt/runtime/lib; \
     find /usr -name 'libdrogon.so*' -exec cp -a '{}' /opt/runtime/lib/ ';' ; \
@@ -25,11 +26,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     XDG_DATA_HOME=/var/lib/karing \
     KARING_DB_PATH=/var/lib/karing/karing.sqlite \
     KARING_UPLOAD_PATH=/var/lib/karing/uploads \
-    KARING_LOG_PATH=/var/log/karing
+    KARING_LOG_PATH=/var/log/karing \
+    KARING_URL=http://127.0.0.1:8080
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libbrotli1 \
     libc-ares2 \
+    libcurl4 \
     libjsoncpp25 \
     libpq5 \
     libmariadb3 \
@@ -40,10 +43,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libuuid1 \
     sqlite3 && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /var/lib/karing /var/log/karing
+    mkdir -p /var/lib/karing /var/log/karing /app
 COPY --from=builder /opt/runtime/lib/ /usr/local/lib/
 RUN echo /usr/local/lib > /etc/ld.so.conf.d/karing-local.conf && ldconfig
 COPY --from=builder /src/build/server/karing-server /usr/local/bin/karing-server
+COPY --from=builder /src/build/cli/karing /usr/local/bin/karing
+WORKDIR /app
 EXPOSE 8080
 VOLUME ["/var/lib/karing", "/var/log/karing"]
 ENTRYPOINT ["/usr/local/bin/karing-server"]
