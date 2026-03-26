@@ -6,7 +6,10 @@ ARG RUNTIME_IMAGE=debian:bookworm-slim
 FROM ${BUILDER_IMAGE} AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
-    build-essential cmake ninja-build git && \
+    build-essential cmake ninja-build git \
+    libcurl4-openssl-dev \
+    libjsoncpp-dev \
+    pkg-config && \
     rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
