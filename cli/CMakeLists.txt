@@ -59,6 +59,7 @@ add_library(karing_cli_core STATIC
   commands/get_command.cpp
   commands/health_command.cpp
   commands/mod_command.cpp
+  commands/swap_command.cpp
   app.cpp
 )
 

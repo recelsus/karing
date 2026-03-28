@@ -87,6 +87,11 @@ Put simply, it is for storing notes and pulling them back out.
   - JSON: replace text content
   - multipart: rename or replace an existing file/text-file
 
+- `POST /swap?id1=<id>&id2=<id>`
+  - swap the contents of two IDs
+  - the IDs themselves do not change; only the slot contents are exchanged
+  - the response returns the two swapped records as an array
+
 - `DELETE /`
   - with no `id`: deletes only the latest created record
     - only if it is still within ten minutes of creation
@@ -113,7 +118,7 @@ Put simply, it is for storing notes and pulling them back out.
 - `GET /health`
   - returns service state and DB information as JSON
 
-- when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
+- when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
 
 For request and response examples, see `docs/requests.md`.
 

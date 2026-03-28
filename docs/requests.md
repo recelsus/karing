@@ -116,6 +116,41 @@ Content-Type: application/json
 }
 ```
 
+## POST /swap?id1=3&id2=4
+
+#### request:
+
+```http
+POST /swap?id1=3&id2=4 HTTP/1.1
+Host: localhost:8080
+```
+
+#### response:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": [
+    {
+      "id": 3,
+      "is_file": false,
+      "filename": "note.txt",
+      "mime": "text/plain",
+      "created_at": 1711113333,
+      "updated_at": 1711113333
+    },
+    {
+      "id": 4,
+      "is_file": false,
+      "content": "slot four text",
+      "created_at": 1711112222,
+      "updated_at": 1711112222
+    }
+  ]
+}
+```
+
 ## DELETE /?id=9
 
 #### request:

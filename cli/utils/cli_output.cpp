@@ -17,6 +17,7 @@ void print_help() {
       << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> [text]\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] del [id]\n"
+      << "  karing [--url <url>] [--api-key <key>] [--json] swap <id1> <id2>\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] find [query] [--limit|-l <n>] [--type|-t text|file]\n"
       << "                                  [--sort|-s id|store|update] [--asc] [--desc] [--full]\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] health\n"

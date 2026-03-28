@@ -35,4 +35,9 @@ int run_mod(const std::string& base_url,
             bool json_output,
             const std::vector<std::string>& args);
 
+int run_swap(const std::string& base_url,
+             const std::optional<std::string>& api_key,
+             bool json_output,
+             const std::vector<std::string>& args);
+
 }

@@ -93,6 +93,7 @@ int run(int argc, char** argv) {
   if (first == "find") return commands::run_find(parsed.base_url, parsed.api_key, parsed.json_output, {parsed.args.begin() + 1, parsed.args.end()});
   if (first == "health") return commands::run_health(parsed.base_url, parsed.api_key, parsed.json_output);
   if (first == "mod") return commands::run_mod(parsed.base_url, parsed.api_key, parsed.json_output, {parsed.args.begin() + 1, parsed.args.end()});
+  if (first == "swap") return commands::run_swap(parsed.base_url, parsed.api_key, parsed.json_output, {parsed.args.begin() + 1, parsed.args.end()});
 
   if (parsed.args.size() == 1 && is_numeric_id_candidate(first)) {
     return commands::run_get(parsed.base_url, parsed.api_key, std::stoi(first), parsed.json_output);

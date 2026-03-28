@@ -193,6 +193,44 @@ void test_force_shrink_reassigns_ids_and_removes_old_files() {
   expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=3;") == "entry-5", "newest kept entry should move to id 3");
 }
 
+void test_swap_entries_exchanges_slot_contents() {
+  const auto env = make_temp_env("swap");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 4, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("slot-one") == 1, "slot 1 insert");
+  expect(dao.insert_file("two.txt", "text/plain", "slot-two") == 2, "slot 2 insert");
+
+  sqlite_db db(env.db_path);
+  const auto first_path_before = query_text(db.handle, "SELECT file_path FROM entries WHERE id=1;");
+  const auto second_path_before = query_text(db.handle, "SELECT file_path FROM entries WHERE id=2;");
+  expect(first_path_before.empty(), "slot 1 should not have file");
+  expect(!second_path_before.empty(), "slot 2 should have file");
+
+  expect(dao.swap_entries(1, 2), "swap_entries should succeed");
+
+  const auto first = dao.get_by_id(1);
+  const auto second = dao.get_by_id(2);
+  expect(first.has_value(), "slot 1 should still be readable");
+  expect(second.has_value(), "slot 2 should still be readable");
+  expect(!first->is_file, "text file remains text-like after swap");
+  expect(first->filename == "two.txt", "slot 1 should now have slot 2 filename");
+  expect(second->content == "slot-one", "slot 2 should now have slot 1 content");
+
+  expect(query_text(db.handle, "SELECT file_path FROM entries WHERE id=1;") == second_path_before,
+         "slot 1 should inherit file path");
+  expect(query_text(db.handle, "SELECT file_path FROM entries WHERE id=2;").empty(),
+         "slot 2 should no longer have a file path");
+
+  std::string mime;
+  std::string filename;
+  std::string data;
+  expect(dao.get_file_blob(1, mime, filename, data), "swapped text file blob should remain readable");
+  expect(filename == "two.txt", "swapped blob filename should match");
+  expect(data == "slot-two", "swapped blob content should match");
+}
+
 }  // namespace
 
 int main() {
@@ -201,6 +239,7 @@ int main() {
       {"dao_manages_file_lifecycle", test_dao_manages_file_lifecycle},
       {"text_file_upload_is_text_record_with_blob", test_text_file_upload_is_text_record_with_blob},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
+      {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},
   };
 
   int failed = 0;

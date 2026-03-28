@@ -175,6 +175,20 @@ response post_json(const std::string& base_url,
   });
 }
 
+response post(const std::string& base_url,
+              const std::string& path,
+              const std::map<std::string, std::string>& query,
+              const std::optional<std::string>& api_key) {
+  return perform_with_optional_auth(base_url, api_key, [&](CURL* curl, const slist_ptr& headers) {
+    const auto url = build_url(curl, base_url, path, query);
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
+    if (headers) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.get());
+  });
+}
+
 response put_json(const std::string& base_url,
                   const std::string& path,
                   const std::map<std::string, std::string>& query,

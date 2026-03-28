@@ -76,6 +76,9 @@ class KaringDao {
   bool patch_text(int id, const std::optional<std::string>& content);
   bool patch_file(int id, const std::optional<std::string>& filename, const std::optional<std::string>& mime, const std::optional<std::string>& data);
 
+  // Swap the full contents of two slots atomically.
+  bool swap_entries(int id1, int id2);
+
  private:
   std::string db_path_;
   std::string upload_path_;

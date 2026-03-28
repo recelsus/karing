@@ -203,6 +203,44 @@ void karing_root_controller::post_karing(const HttpRequestPtr& req, std::functio
   return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported content-type"));
 }
 
+void karing_root_controller::swap_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
+  const auto& options = karing::options::current();
+  dao::KaringDao dao(options.db_path, options.upload_path);
+  const auto params = req->getParameters();
+
+  if (params.find("id1") == params.end() || params.find("id2") == params.end()) {
+    return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id1 and id2 are required"));
+  }
+
+  int id1 = 0;
+  int id2 = 0;
+  try {
+    id1 = std::stoi(params.at("id1"));
+    id2 = std::stoi(params.at("id2"));
+  } catch (...) {
+    return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id1 and id2 must be integers"));
+  }
+
+  if (id1 == id2) {
+    return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id1 and id2 must be different"));
+  }
+
+  if (!dao.swap_entries(id1, id2)) {
+    return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Swap failed"));
+  }
+
+  const auto first = dao.get_by_id(id1);
+  const auto second = dao.get_by_id(id2);
+  if (!first || !second) {
+    return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Swap completed but records could not be reloaded"));
+  }
+
+  Json::Value out = Json::arrayValue;
+  out.append(record_to_json(*first));
+  out.append(record_to_json(*second));
+  return cb(karing::http::ok(out));
+}
+
 void karing_root_controller::put_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
   const auto& options = karing::options::current();
   dao::KaringDao dao(options.db_path, options.upload_path);

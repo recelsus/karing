@@ -27,6 +27,11 @@ response post_json(const std::string& base_url,
                    const std::string& json_body,
                    const std::optional<std::string>& api_key = std::nullopt);
 
+response post(const std::string& base_url,
+              const std::string& path,
+              const std::map<std::string, std::string>& query = {},
+              const std::optional<std::string>& api_key = std::nullopt);
+
 response put_json(const std::string& base_url,
                   const std::string& path,
                   const std::map<std::string, std::string>& query,

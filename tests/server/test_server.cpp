@@ -169,6 +169,45 @@ void test_root_json_crud_and_delete() {
   expect(second_delete_resp->getStatusCode() == drogon::k404NotFound, "DELETE / without id should not cascade");
 }
 
+void test_root_swap() {
+  const auto env = make_temp_env("swap");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 4, false).ok, "db init should succeed");
+  set_current_options(env);
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("swap-one") == 1, "insert first slot");
+  expect(dao.insert_file("swap-two.txt", "text/plain", "swap-two") == 2, "insert second slot");
+
+  karing::controllers::karing_root_controller controller;
+  auto swap_req = drogon::HttpRequest::newHttpRequest();
+  swap_req->setMethod(drogon::Post);
+  swap_req->setParameter("id1", "1");
+  swap_req->setParameter("id2", "2");
+  auto swap_resp = invoke([&](auto&& cb) { controller.swap_karing(swap_req, std::move(cb)); });
+  expect(swap_resp->getStatusCode() == drogon::k200OK, "POST /swap should succeed");
+  auto swap_json = response_json(swap_resp);
+  expect(swap_json["data"].isArray(), "swap response should return an array");
+  expect(swap_json["data"].size() == 2, "swap response should return two records");
+  expect(swap_json["data"][0]["id"].asInt() == 1, "swap response first record should be id 1");
+  expect(swap_json["data"][0]["filename"].asString() == "swap-two.txt", "swap response should show swapped slot 1");
+  expect(swap_json["data"][1]["id"].asInt() == 2, "swap response second record should be id 2");
+  expect(swap_json["data"][1]["content"].asString() == "swap-one", "swap response should show swapped slot 2");
+
+  auto first = dao.get_by_id(1);
+  auto second = dao.get_by_id(2);
+  expect(first.has_value(), "swapped slot 1 should exist");
+  expect(second.has_value(), "swapped slot 2 should exist");
+  expect(first->filename == "swap-two.txt", "slot 1 should now contain slot 2 record");
+  expect(second->content == "swap-one", "slot 2 should now contain slot 1 record");
+
+  auto same_swap_req = drogon::HttpRequest::newHttpRequest();
+  same_swap_req->setMethod(drogon::Post);
+  same_swap_req->setParameter("id1", "1");
+  same_swap_req->setParameter("id2", "1");
+  auto same_swap_resp = invoke([&](auto&& cb) { controller.swap_karing(same_swap_req, std::move(cb)); });
+  expect(same_swap_resp->getStatusCode() == drogon::k400BadRequest, "POST /swap should reject same ids");
+}
+
 void test_search_and_live_search() {
   const auto env = make_temp_env("search");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -298,6 +337,7 @@ int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"options_parse_modes", test_options_parse_modes},
       {"root_json_crud_and_delete", test_root_json_crud_and_delete},
+      {"root_swap", test_root_swap},
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},
       {"health_response", test_health_response},
