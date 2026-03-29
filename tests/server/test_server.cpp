@@ -17,6 +17,7 @@
 #include "controllers/karing_search_live_controller.h"
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
+#include "utils/upload_mime.h"
 #include "utils/limits.h"
 #include "utils/options.h"
 
@@ -278,6 +279,15 @@ void test_health_response() {
   expect(json["db"]["max_items"].asInt() == 3, "health should expose db max_items");
 }
 
+void test_upload_mime_support() {
+  expect(karing::upload_mime::is_supported("application/json"), "application/json should be supported");
+  expect(karing::upload_mime::is_supported("application/javascript"), "application/javascript should be supported");
+  expect(karing::upload_mime::normalise("", "note.md") == "text/markdown", "markdown should infer text/markdown");
+  expect(karing::upload_mime::normalise("", "data.json") == "application/json", "json should infer application/json");
+  expect(karing::upload_mime::normalise("application/octet-stream", "main.cpp") == "text/plain", "cpp should infer text/plain");
+  expect(karing::upload_mime::normalise("application/octet-stream", "index.ts") == "text/plain", "ts should infer text/plain");
+}
+
 void test_root_file_and_text_file_responses() {
   const auto env = make_temp_env("files");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -329,6 +339,22 @@ void test_root_file_and_text_file_responses() {
          "audio download should use attachment");
   expect(audio_download_resp->getHeader("content-disposition").find("sound.mp3") != std::string::npos,
          "audio download should preserve filename");
+
+  expect(dao.insert_file("日本語ファイル名.mp3", "audio/mpeg", "jp-mp3") == 4, "insert unicode audio file");
+  auto unicode_download_req = drogon::HttpRequest::newHttpRequest();
+  unicode_download_req->setMethod(drogon::Get);
+  unicode_download_req->setParameter("id", "4");
+  unicode_download_req->setParameter("as", "download");
+  auto unicode_download_resp =
+      invoke([&](auto&& cb) { controller.get_karing(unicode_download_req, std::move(cb)); });
+  expect(unicode_download_resp->getStatusCode() == drogon::k200OK, "GET unicode file as download should succeed");
+  const auto unicode_disposition = unicode_download_resp->getHeader("content-disposition");
+  expect(unicode_disposition.find("attachment") != std::string::npos,
+         "unicode file download should use attachment");
+  expect(unicode_disposition.find("filename*=") != std::string::npos,
+         "unicode file download should include filename*");
+  expect(unicode_disposition.find("UTF-8''") != std::string::npos,
+         "unicode file download should use RFC 5987 encoding");
 }
 
 }  // namespace
@@ -341,6 +367,7 @@ int main() {
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},
       {"health_response", test_health_response},
+      {"upload_mime_support", test_upload_mime_support},
   };
 
   int failed = 0;

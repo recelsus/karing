@@ -61,7 +61,16 @@ std::string order_by_clause(SortField sort, bool desc, const char* table_alias) 
 }
 
 std::string media_kind_for_mime(const std::string& mime) {
-  if (mime.rfind("text/", 0) == 0) return "text";
+  if (mime.rfind("text/", 0) == 0 ||
+      mime == "application/json" ||
+      mime == "application/ld+json" ||
+      mime == "application/xml" ||
+      mime == "application/yaml" ||
+      mime == "application/x-yaml" ||
+      mime == "application/toml" ||
+      mime == "application/javascript") {
+    return "text";
+  }
   if (mime.rfind("image/", 0) == 0) return "image";
   if (mime.rfind("audio/", 0) == 0) return "audio";
   if (mime.rfind("video/", 0) == 0) return "video";

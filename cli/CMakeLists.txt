@@ -49,6 +49,7 @@ endif()
 add_library(karing_cli_core STATIC
   http/http_client.cpp
   utils/auth_cache.cpp
+  utils/arg_utils.cpp
   utils/cli_output.cpp
   utils/io.cpp
   utils/mime.cpp

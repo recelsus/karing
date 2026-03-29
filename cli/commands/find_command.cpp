@@ -12,20 +12,12 @@
 #include <json/json.h>
 
 #include "http/http_client.h"
+#include "utils/arg_utils.h"
 #include "utils/io.h"
 
 namespace karing::cli::commands {
 
 namespace {
-
-std::string join_words(const std::vector<std::string>& items) {
-  std::string out;
-  for (size_t i = 0; i < items.size(); ++i) {
-    if (i > 0) out += ' ';
-    out += items[i];
-  }
-  return out;
-}
 
 std::string truncate_content(const std::string& value, bool full) {
   if (full || value.size() <= 48) return value;
@@ -150,7 +142,7 @@ int run_find(const std::string& base_url,
 
   if (asc && desc) return utils::print_error("--asc and --desc cannot be used together");
   query["order"] = asc ? "asc" : "desc";
-  const std::string q = join_words(terms);
+  const std::string q = utils::join_words(terms);
   if (!q.empty()) query["q"] = q;
 
   const auto response = http::get(base_url, "/search", query, api_key);

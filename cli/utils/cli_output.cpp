@@ -12,6 +12,7 @@ void print_help() {
       << "Usage:\n"
       << "  karing [--url <url>] [--api-key <key>] [--json]\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] <id>\n"
+      << "  karing [--url <url>] [--api-key <key>] [--json] --id <id>\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] add [text]\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] add -f <path> [--mime <type>] [--name <filename>]\n"
       << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> [text]\n"

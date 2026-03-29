@@ -8,23 +8,11 @@
 #include <json/json.h>
 
 #include "http/http_client.h"
+#include "utils/arg_utils.h"
 #include "utils/io.h"
 #include "utils/mime.h"
 
 namespace karing::cli::commands {
-
-namespace {
-
-std::string join_words(const std::vector<std::string>& items) {
-  std::string out;
-  for (size_t i = 0; i < items.size(); ++i) {
-    if (i > 0) out += ' ';
-    out += items[i];
-  }
-  return out;
-}
-
-}  // namespace
 
 int run_add(const std::string& base_url,
             const std::optional<std::string>& api_key,
@@ -60,7 +48,7 @@ int run_add(const std::string& base_url,
     return json_output ? utils::print_response_json(response) : utils::print_response(response, false);
   }
 
-  std::string content = join_words(text_parts);
+  std::string content = utils::join_words(text_parts);
   if (content.empty()) {
     if (const auto stdin_text = utils::read_stdin_text(); stdin_text.has_value()) content = *stdin_text;
   }

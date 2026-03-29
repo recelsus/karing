@@ -2,12 +2,16 @@
 
 #include <drogon/MultiPart.h>
 #include <drogon/drogon.h>
+#include <cctype>
+#include <iomanip>
+#include <sstream>
 #include <optional>
 #include <string>
 
 #include "dao/karing_dao.h"
 #include "utils/json_response.h"
 #include "utils/options.h"
+#include "utils/upload_mime.h"
 
 using drogon::HttpRequestPtr;
 using drogon::HttpResponsePtr;
@@ -21,27 +25,52 @@ bool starts_with(const std::string& s, const std::string& prefix) {
   return s.rfind(prefix, 0) == 0;
 }
 
-bool is_supported_upload_mime(const std::string& mime) {
-  return starts_with(mime, "text/") ||
-         starts_with(mime, "image/") ||
-         starts_with(mime, "audio/") ||
-         starts_with(mime, "video/") ||
-         mime == "application/pdf" ||
-         mime == "application/zip" ||
-         mime == "application/gzip" ||
-         mime == "application/x-tar" ||
-         mime == "application/x-7z-compressed" ||
-         mime == "application/vnd.rar" ||
-         mime == "application/msword" ||
-         mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-         mime == "application/vnd.ms-excel" ||
-         mime == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-         mime == "application/vnd.ms-powerpoint" ||
-         mime == "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-}
-
 bool is_downloadable_text_record(const dao::KaringRecord& record) {
   return !record.is_file && !record.filename.empty() && starts_with(record.mime, "text/");
+}
+
+std::optional<int> parse_id_param(const drogon::SafeStringMap<std::string>& params, const char* key) {
+  const auto it = params.find(key);
+  if (it == params.end()) return std::nullopt;
+  try {
+    return std::stoi(it->second);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+std::string ascii_fallback_filename(std::string_view filename) {
+  std::string out;
+  out.reserve(filename.size());
+  for (unsigned char ch : filename) {
+    if (ch >= 0x20 && ch <= 0x7e && ch != '"' && ch != '\\' && ch != ';') out.push_back(static_cast<char>(ch));
+    else out.push_back('_');
+  }
+  if (out.empty()) return "download";
+  return out;
+}
+
+std::string percent_encode_utf8(std::string_view value) {
+  std::ostringstream out;
+  out << std::uppercase << std::hex;
+  for (unsigned char ch : value) {
+    if ((ch >= 'A' && ch <= 'Z') ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= '0' && ch <= '9') ||
+        ch == '-' || ch == '.' || ch == '_' || ch == '~') {
+      out << static_cast<char>(ch);
+    } else {
+      out << '%' << std::setw(2) << std::setfill('0') << static_cast<int>(ch);
+    }
+  }
+  return out.str();
+}
+
+std::string content_disposition(std::string_view disposition, std::string_view filename) {
+  const auto fallback = ascii_fallback_filename(filename);
+  return std::string(disposition) +
+         "; filename=\"" + fallback + "\"" +
+         "; filename*=UTF-8''" + percent_encode_utf8(filename);
 }
 
 Json::Value record_to_json(const dao::KaringRecord& r) {
@@ -66,8 +95,9 @@ void karing_root_controller::get_karing(const HttpRequestPtr& req, std::function
 
   if (want_json) {
     if (params.find("id") != params.end()) {
-      int id = std::stoi(params.at("id"));
-      auto rec = dao.get_by_id(id);
+      const auto id = parse_id_param(params, "id");
+      if (!id.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Invalid id"));
+      auto rec = dao.get_by_id(*id);
       if (!rec) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
       Json::Value data = Json::arrayValue;
       data.append(record_to_json(*rec));
@@ -111,25 +141,26 @@ void karing_root_controller::get_karing(const HttpRequestPtr& req, std::function
     resp->setStatusCode(HttpStatusCode::k200OK);
     resp->setContentTypeCode(drogon::CT_CUSTOM);
     resp->setContentTypeString(mime);
-    resp->addHeader("Content-Disposition", std::string("inline; filename=\"") + filename + "\"");
+    resp->addHeader("Content-Disposition", content_disposition("inline", filename));
     resp->setBody(std::move(data));
     return cb(resp);
   }
 
   if (params.find("id") != params.end()) {
-    int id = std::stoi(params.at("id"));
+    const auto id = parse_id_param(params, "id");
+    if (!id.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Invalid id"));
     if (params.find("as") != params.end() && params.at("as") == "download") {
       std::string mime, filename, data;
-      if (!dao.get_file_blob(id, mime, filename, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "File not found"));
+      if (!dao.get_file_blob(*id, mime, filename, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "File not found"));
       auto resp = drogon::HttpResponse::newHttpResponse();
       resp->setStatusCode(HttpStatusCode::k200OK);
       resp->setContentTypeCode(drogon::CT_CUSTOM);
       resp->setContentTypeString(mime);
-      resp->addHeader("Content-Disposition", std::string("attachment; filename=\"") + filename + "\"");
+      resp->addHeader("Content-Disposition", content_disposition("attachment", filename));
       resp->setBody(std::move(data));
       return cb(resp);
     }
-    auto rec = dao.get_by_id(id);
+    auto rec = dao.get_by_id(*id);
     if (!rec) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
     if (!rec->is_file) {
       if (is_downloadable_text_record(*rec)) {
@@ -155,7 +186,7 @@ void karing_root_controller::get_karing(const HttpRequestPtr& req, std::function
     resp->setStatusCode(HttpStatusCode::k200OK);
     resp->setContentTypeCode(drogon::CT_CUSTOM);
     resp->setContentTypeString(mime);
-    resp->addHeader("Content-Disposition", std::string("inline; filename=\"") + filename + "\"");
+    resp->addHeader("Content-Disposition", content_disposition("inline", filename));
     resp->setBody(std::move(data));
     return cb(resp);
   }
@@ -186,11 +217,11 @@ void karing_root_controller::post_karing(const HttpRequestPtr& req, std::functio
     const auto& files = mpp.getFiles();
     if (files.empty()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "File required"));
     const auto& f = files.front();
-    std::string mime = mpp.getParameter<std::string>("mime");
-    if (mime.empty()) mime = "application/octet-stream";
-    if (!is_supported_upload_mime(mime)) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
     std::string filename = mpp.getParameter<std::string>("filename");
     if (filename.empty()) filename = f.getFileName();
+    std::string mime = karing::upload_mime::normalise(mpp.getParameter<std::string>("mime"), filename);
+    if (mime.empty()) mime = "application/octet-stream";
+    if (!karing::upload_mime::is_supported(mime)) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
     std::string data(f.fileData(), f.fileLength());
     if (static_cast<long long>(data.size()) > static_cast<long long>(options.max_file_bytes)) {
       return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
@@ -214,12 +245,13 @@ void karing_root_controller::swap_karing(const HttpRequestPtr& req, std::functio
 
   int id1 = 0;
   int id2 = 0;
-  try {
-    id1 = std::stoi(params.at("id1"));
-    id2 = std::stoi(params.at("id2"));
-  } catch (...) {
+  const auto id1_value = parse_id_param(params, "id1");
+  const auto id2_value = parse_id_param(params, "id2");
+  if (!id1_value.has_value() || !id2_value.has_value()) {
     return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id1 and id2 must be integers"));
   }
+  id1 = *id1_value;
+  id2 = *id2_value;
 
   if (id1 == id2) {
     return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id1 and id2 must be different"));
@@ -246,7 +278,8 @@ void karing_root_controller::put_karing(const HttpRequestPtr& req, std::function
   dao::KaringDao dao(options.db_path, options.upload_path);
   auto params = req->getParameters();
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
-  int id = std::stoi(params.at("id"));
+  const auto id = parse_id_param(params, "id");
+  if (!id.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Invalid id"));
   const auto& ctype = req->getHeader("content-type");
 
   if (ctype.find("application/json") != std::string::npos) {
@@ -254,9 +287,9 @@ void karing_root_controller::put_karing(const HttpRequestPtr& req, std::function
     if (!json || !(*json)["content"].isString()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Content required"));
     std::string content = (*json)["content"].asString();
     if (static_cast<long long>(content.size()) > static_cast<long long>(options.max_text_bytes)) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
-    if (!dao.update_text(id, content)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
+    if (!dao.update_text(*id, content)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     Json::Value out;
-    out["id"] = id;
+    out["id"] = *id;
     return cb(karing::http::ok(out));
   }
 
@@ -266,16 +299,16 @@ void karing_root_controller::put_karing(const HttpRequestPtr& req, std::function
     const auto& files = mpp.getFiles();
     if (files.empty()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "File required"));
     const auto& f = files.front();
-    std::string mime = mpp.getParameter<std::string>("mime");
-    if (mime.empty()) mime = "application/octet-stream";
-    if (!is_supported_upload_mime(mime)) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
     std::string filename = mpp.getParameter<std::string>("filename");
     if (filename.empty()) filename = f.getFileName();
+    std::string mime = karing::upload_mime::normalise(mpp.getParameter<std::string>("mime"), filename);
+    if (mime.empty()) mime = "application/octet-stream";
+    if (!karing::upload_mime::is_supported(mime)) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
     std::string data(f.fileData(), f.fileLength());
     if (static_cast<long long>(data.size()) > static_cast<long long>(options.max_file_bytes)) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "File too large"));
-    if (!dao.update_file(id, filename, mime, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
+    if (!dao.update_file(*id, filename, mime, data)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Update failed"));
     Json::Value out;
-    out["id"] = id;
+    out["id"] = *id;
     return cb(karing::http::ok(out));
   }
 
@@ -287,7 +320,8 @@ void karing_root_controller::patch_karing(const HttpRequestPtr& req, std::functi
   dao::KaringDao dao(options.db_path, options.upload_path);
   auto params = req->getParameters();
   if (params.find("id") == params.end()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Id required"));
-  int id = std::stoi(params.at("id"));
+  const auto id = parse_id_param(params, "id");
+  if (!id.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Invalid id"));
   const auto& ctype = req->getHeader("content-type");
 
   if (ctype.find("application/json") != std::string::npos) {
@@ -298,9 +332,9 @@ void karing_root_controller::patch_karing(const HttpRequestPtr& req, std::functi
       content = (*json)["content"].asString();
       if (static_cast<long long>(content->size()) > static_cast<long long>(options.max_text_bytes)) return cb(karing::http::error(HttpStatusCode::k413RequestEntityTooLarge, "E_SIZE", "Text too large"));
     }
-    if (!dao.patch_text(id, content)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
+    if (!dao.patch_text(*id, content)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
     Json::Value out;
-    out["id"] = id;
+    out["id"] = *id;
     return cb(karing::http::ok(out));
   }
 
@@ -318,12 +352,18 @@ void karing_root_controller::patch_karing(const HttpRequestPtr& req, std::functi
     std::optional<std::string> mime;
     if (auto p = mpp.getParameter<std::string>("filename"); !p.empty()) filename = p;
     if (auto p = mpp.getParameter<std::string>("mime"); !p.empty()) {
-      if (!is_supported_upload_mime(p)) return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
-      mime = p;
+      const auto normalised = karing::upload_mime::normalise(p, filename.value_or(files.empty() ? std::string{} : files.front().getFileName()));
+      if (normalised.empty() || !karing::upload_mime::is_supported(normalised)) {
+        return cb(karing::http::error(HttpStatusCode::k415UnsupportedMediaType, "E_MIME", "Unsupported media type"));
+      }
+      mime = normalised;
+    } else if (!files.empty()) {
+      const auto guessed = karing::upload_mime::normalise("", filename.value_or(files.front().getFileName()));
+      if (!guessed.empty()) mime = guessed;
     }
-    if (!dao.patch_file(id, filename, mime, data)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
+    if (!dao.patch_file(*id, filename, mime, data)) return cb(karing::http::error(HttpStatusCode::k409Conflict, "E_CONFLICT", "Patch failed"));
     Json::Value out;
-    out["id"] = id;
+    out["id"] = *id;
     return cb(karing::http::ok(out));
   }
 
@@ -339,8 +379,9 @@ void karing_root_controller::delete_karing(const HttpRequestPtr& req, std::funct
       return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "No recent latest record to delete"));
     }
   } else {
-    int id = std::stoi(params.at("id"));
-    if (!dao.logical_delete(id)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
+    const auto id = parse_id_param(params, "id");
+    if (!id.has_value()) return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "Invalid id"));
+    if (!dao.logical_delete(*id)) return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Not found"));
   }
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setStatusCode(HttpStatusCode::k204NoContent);

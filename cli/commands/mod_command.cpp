@@ -8,36 +8,11 @@
 #include <json/json.h>
 
 #include "http/http_client.h"
+#include "utils/arg_utils.h"
 #include "utils/io.h"
 #include "utils/mime.h"
 
 namespace karing::cli::commands {
-
-namespace {
-
-std::string join_words(const std::vector<std::string>& items) {
-  std::string out;
-  for (size_t i = 0; i < items.size(); ++i) {
-    if (i > 0) out += ' ';
-    out += items[i];
-  }
-  return out;
-}
-
-bool is_valid_id(const std::string& value) {
-  if (value.empty()) return false;
-  for (char ch : value) {
-    if (ch < '0' || ch > '9') return false;
-  }
-  try {
-    const int id = std::stoi(value);
-    return id >= 1 && id <= 1000;
-  } catch (...) {
-    return false;
-  }
-}
-
-}  // namespace
 
 int run_mod(const std::string& base_url,
             const std::optional<std::string>& api_key,
@@ -45,7 +20,7 @@ int run_mod(const std::string& base_url,
             const std::vector<std::string>& args) {
   if (args.empty()) return utils::print_error("mod requires an id");
   const auto& id = args.front();
-  if (!is_valid_id(id)) return utils::print_error("mod id must be in range 1..1000");
+  if (!utils::is_valid_id(id)) return utils::print_error("mod id must be in range 1..1000");
 
   std::optional<std::string> file_path;
   std::optional<std::string> mime;
@@ -80,7 +55,7 @@ int run_mod(const std::string& base_url,
     return json_output ? utils::print_response_json(response) : utils::print_response(response, false);
   }
 
-  std::string content = join_words(text_parts);
+  std::string content = utils::join_words(text_parts);
   if (content.empty()) {
     if (const auto stdin_text = utils::read_stdin_text(); stdin_text.has_value()) content = *stdin_text;
   }
