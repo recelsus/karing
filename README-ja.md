@@ -130,6 +130,7 @@ DrogonベースのPastebin風APIサーバー。
 ## Documents
 
 - ビルド/インストール: `docs/build-ja.md`
+- CLI: `docs/cli-ja.md`
 - オプション: `docs/option-ja.md`
 - リクエスト/レスポンス: `docs/requests-ja.md`
 - 開発: `docs/README-dev.md`

@@ -26,7 +26,7 @@ void print_help() {
       << "  karing --version\n"
       << "\n"
       << "URL resolution:\n"
-      << "  --url > KARING_URL > KARING_ENDPOINT\n"
+      << "  --url > KARING_URL\n"
       << "API key resolution:\n"
       << "  --api-key > KARING_API_KEY\n";
 }

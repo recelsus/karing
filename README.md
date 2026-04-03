@@ -131,6 +131,7 @@ For request and response examples, see `docs/requests.md`.
 ## Documents
 
 - build/install: `docs/build.md`
+- CLI: `docs/cli.md`
 - options: `docs/option.md`
 - request/response: `docs/requests.md`
 - development: `docs/README-dev.md`

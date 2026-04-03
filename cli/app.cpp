@@ -58,7 +58,6 @@ dispatch_context parse_global(int argc, char** argv) {
   }
   if (out.base_url.empty()) {
     if (const char* env = std::getenv("KARING_URL"); env && *env) out.base_url = env;
-    else if (const char* env = std::getenv("KARING_ENDPOINT"); env && *env) out.base_url = env;
   }
   if (!out.api_key.has_value()) {
     if (const char* env = std::getenv("KARING_API_KEY"); env && *env) out.api_key = std::string(env);
@@ -72,7 +71,7 @@ dispatch_context parse_global(int argc, char** argv) {
 int run(int argc, char** argv) {
   const auto parsed = parse_global(argc, argv);
   if (parsed.args.empty()) {
-    if (parsed.base_url.empty()) return utils::print_error("missing server URL; use --url, KARING_URL, or KARING_ENDPOINT");
+    if (parsed.base_url.empty()) return utils::print_error("missing server URL; use --url or KARING_URL");
     return commands::run_get(parsed.base_url, parsed.api_key, std::nullopt, parsed.json_output);
   }
 
@@ -86,7 +85,7 @@ int run(int argc, char** argv) {
     return 0;
   }
   if (parsed.base_url.empty()) {
-    return utils::print_error("missing server URL; use --url, KARING_URL, or KARING_ENDPOINT");
+    return utils::print_error("missing server URL; use --url or KARING_URL");
   }
   if (parsed.explicit_id.has_value()) {
     if (*parsed.explicit_id < 1 || *parsed.explicit_id > 1000) {
