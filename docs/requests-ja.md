@@ -151,6 +151,44 @@ Host: localhost:8080
 }
 ```
 
+## POST /resequence
+
+#### request:
+
+```http
+POST /resequence HTTP/1.1
+Host: localhost:8080
+```
+
+#### response:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": [
+    {
+      "id": 1,
+      "is_file": false,
+      "content": "oldest note",
+      "created_at": 1711111111,
+      "updated_at": 1711111111
+    },
+    {
+      "id": 2,
+      "is_file": false,
+      "content": "next note",
+      "created_at": 1711112222,
+      "updated_at": 1711112222
+    }
+  ],
+  "meta": {
+    "count": 2,
+    "next_id": 3
+  }
+}
+```
+
 ## DELETE /?id=9
 
 #### request:

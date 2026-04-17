@@ -231,6 +231,42 @@ void test_swap_entries_exchanges_slot_contents() {
   expect(data == "slot-two", "swapped blob content should match");
 }
 
+void test_resequence_entries_compacts_ids_from_one() {
+  const auto env = make_temp_env("resequence");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("slot-one") == 1, "slot 1 insert");
+  expect(dao.insert_text("slot-two") == 2, "slot 2 insert");
+  expect(dao.insert_file("slot-three.txt", "text/plain", "slot-three") == 3, "slot 3 insert");
+  expect(dao.logical_delete(2), "delete slot 2");
+  expect(dao.insert_text("slot-four") == 4, "slot 4 insert");
+
+  sqlite_db db(env.db_path);
+  exec_sql(db.handle,
+           "UPDATE entries SET stored_at=30, updated_at=30 WHERE id=1;"
+           "UPDATE entries SET stored_at=20, updated_at=20 WHERE id=3;"
+           "UPDATE entries SET stored_at=40, updated_at=40 WHERE id=4;"
+           "UPDATE store_state SET next_id=5 WHERE singleton_id=1;");
+
+  const auto resequenced = dao.resequence_entries();
+  expect(resequenced.has_value(), "resequence should succeed");
+  expect(resequenced->first.size() == 3, "resequence should keep three active records");
+  expect(resequenced->second == 4, "next_id should become first empty slot");
+
+  const auto first = dao.get_by_id(1);
+  expect(first.has_value(), "first resequenced slot should exist");
+  expect(first->filename == "slot-three.txt", "oldest active entry should move to id 1");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=2;") == "slot-one",
+         "second active entry should move to id 2");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=3;") == "slot-four",
+         "third active entry should move to id 3");
+  expect(query_int(db.handle, "SELECT used FROM entries WHERE id=4;") == 0, "slot 4 should be cleared");
+  expect(query_int(db.handle, "SELECT next_id FROM store_state WHERE singleton_id=1;") == 4,
+         "next_id should point to first cleared slot");
+}
+
 }  // namespace
 
 int main() {
@@ -240,6 +276,7 @@ int main() {
       {"text_file_upload_is_text_record_with_blob", test_text_file_upload_is_text_record_with_blob},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
       {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},
+      {"resequence_entries_compacts_ids_from_one", test_resequence_entries_compacts_ids_from_one},
   };
 
   int failed = 0;

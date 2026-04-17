@@ -2,6 +2,10 @@
 
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include "dao/karing_dao.h"
 
 namespace karing::store {
 
@@ -25,6 +29,7 @@ class entry_store {
                   const std::optional<std::string>& data) const;
 
   bool swap_entries(int id1, int id2) const;
+  std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> resequence_entries() const;
 
  private:
   std::string db_path_;

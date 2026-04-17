@@ -59,6 +59,8 @@ CLI は API key が与えられている場合:
   - 最新の削除または指定IDの削除
 - `karing swap <id1> <id2>`
   - 2つのIDの内容を入れ替え
+- `karing resequence`
+  - active レコードを `1..n` に詰め直す
 - `karing find [query] [--limit|-l <n>] [--type|-t text|file] [--sort|-s id|store|update] [--asc] [--desc] [--full]`
   - 一覧または検索
 - `karing health`
@@ -86,6 +88,7 @@ KARING_URL=http://127.0.0.1:8080 karing add -f ./note.txt
 KARING_URL=http://127.0.0.1:8080 karing mod 5 "updated"
 KARING_URL=http://127.0.0.1:8080 karing del
 KARING_URL=http://127.0.0.1:8080 karing swap 3 4
+KARING_URL=http://127.0.0.1:8080 karing resequence
 KARING_URL=http://127.0.0.1:8080 karing find test --limit 10 --sort id --desc
 KARING_URL=http://127.0.0.1:8080 karing health
 ```

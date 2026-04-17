@@ -92,6 +92,11 @@ Put simply, it is for storing notes and pulling them back out.
   - the IDs themselves do not change; only the slot contents are exchanged
   - the response returns the two swapped records as an array
 
+- `POST /resequence`
+  - compact active records into `1..n` using `stored_at asc, id asc`
+  - move empty slots to the end
+  - the response returns the resequenced active records and `next_id`
+
 - `DELETE /`
   - with no `id`: deletes only the latest created record
     - only if it is still within ten minutes of creation
@@ -118,7 +123,7 @@ Put simply, it is for storing notes and pulling them back out.
 - `GET /health`
   - returns service state and DB information as JSON
 
-- when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
+- when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/resequence`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
 
 For request and response examples, see `docs/requests.md`.
 

@@ -78,4 +78,9 @@ std::optional<std::pair<karing::dao::KaringRecord, karing::dao::KaringRecord>> r
   return std::make_pair(*first, *second);
 }
 
+std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> root_service::resequence() const {
+  auto dao = make_dao();
+  return dao.resequence_entries();
+}
+
 }

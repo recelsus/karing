@@ -38,6 +38,7 @@ class root_service {
   bool delete_by_id(int id) const;
 
   std::optional<std::pair<karing::dao::KaringRecord, karing::dao::KaringRecord>> swap(int id1, int id2) const;
+  std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> resequence() const;
 
  private:
   karing::dao::KaringDao make_dao() const;

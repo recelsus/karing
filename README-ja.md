@@ -92,6 +92,11 @@ DrogonベースのPastebin風APIサーバー。
   - ID自体は変わらず、各スロットの内容だけを交換
   - 応答では入れ替え後の2レコードを配列で返却
 
+- `POST /resequence`
+  - active レコードを `stored_at asc, id asc` で `1..n` に詰め直し
+  - 空スロットは末尾へ寄せる
+  - 応答では振り直し後の active レコード配列と `next_id` を返却
+
 - `DELETE /`
   - `id` なし: 最新作成レコード1件だけを削除 
     - 削除対象は「最新かつ作成から10分以内」の場合のみ
@@ -117,7 +122,7 @@ DrogonベースのPastebin風APIサーバー。
 - `GET /health`
   - サービス状態と DB 情報を JSON で返却
 
-- base_path指定時は `<base_path>/`、`<base_path>/swap`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
+- base_path指定時は `<base_path>/`、`<base_path>/swap`、`<base_path>/resequence`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
 
 リクエスト例とレスポンス例は `docs/requests-ja.md` を参照してください。
 

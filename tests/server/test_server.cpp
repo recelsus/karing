@@ -209,6 +209,38 @@ void test_root_swap() {
   expect(same_swap_resp->getStatusCode() == drogon::k400BadRequest, "POST /swap should reject same ids");
 }
 
+void test_root_resequence() {
+  const auto env = make_temp_env("resequence");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+  set_current_options(env);
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("one") == 1, "insert slot 1");
+  expect(dao.insert_text("two") == 2, "insert slot 2");
+  expect(dao.insert_text("three") == 3, "insert slot 3");
+  expect(dao.logical_delete(2), "delete slot 2");
+  expect(dao.insert_text("four") == 4, "insert slot 4");
+
+  auto resequence_req = drogon::HttpRequest::newHttpRequest();
+  resequence_req->setMethod(drogon::Post);
+  karing::controllers::karing_root_controller controller;
+  auto resequence_resp = invoke([&](auto&& cb) { controller.resequence_karing(resequence_req, std::move(cb)); });
+  expect(resequence_resp->getStatusCode() == drogon::k200OK, "POST /resequence should succeed");
+
+  auto json = response_json(resequence_resp);
+  expect(json["data"].isArray(), "resequence response should return an array");
+  expect(json["data"].size() == 3, "resequence response should return active records");
+  expect(json["data"][0]["id"].asInt() == 1, "resequence first record should be id 1");
+  expect(json["meta"]["next_id"].asInt() == 4, "resequence should return next_id");
+
+  auto first = dao.get_by_id(1);
+  auto second = dao.get_by_id(2);
+  auto third = dao.get_by_id(3);
+  expect(first.has_value() && first->content == "one", "slot 1 should contain first oldest record");
+  expect(second.has_value() && second->content == "three", "slot 2 should contain next record");
+  expect(third.has_value() && third->content == "four", "slot 3 should contain last record");
+}
+
 void test_search_and_live_search() {
   const auto env = make_temp_env("search");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -364,6 +396,7 @@ int main() {
       {"options_parse_modes", test_options_parse_modes},
       {"root_json_crud_and_delete", test_root_json_crud_and_delete},
       {"root_swap", test_root_swap},
+      {"root_resequence", test_root_resequence},
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},
       {"health_response", test_health_response},

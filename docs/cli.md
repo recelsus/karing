@@ -59,6 +59,8 @@ The successful scheme is cached temporarily.
   - delete the latest record or the specified ID
 - `karing swap <id1> <id2>`
   - swap the contents of two IDs
+- `karing resequence`
+  - compact active records into `1..n`
 - `karing find [query] [--limit|-l <n>] [--type|-t text|file] [--sort|-s id|store|update] [--asc] [--desc] [--full]`
   - list or search
 - `karing health`
@@ -86,6 +88,7 @@ KARING_URL=http://127.0.0.1:8080 karing add -f ./note.txt
 KARING_URL=http://127.0.0.1:8080 karing mod 5 "updated"
 KARING_URL=http://127.0.0.1:8080 karing del
 KARING_URL=http://127.0.0.1:8080 karing swap 3 4
+KARING_URL=http://127.0.0.1:8080 karing resequence
 KARING_URL=http://127.0.0.1:8080 karing find test --limit 10 --sort id --desc
 KARING_URL=http://127.0.0.1:8080 karing health
 ```

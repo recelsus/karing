@@ -174,6 +174,24 @@ void karing_root_controller::swap_karing(const HttpRequestPtr& req, std::functio
   return cb(karing::http::ok(out));
 }
 
+void karing_root_controller::resequence_karing(const HttpRequestPtr&,
+                                               std::function<void(const HttpResponsePtr&)>&& cb) {
+  const auto service = make_root_service();
+  const auto resequenced = service.resequence();
+  if (!resequenced) {
+    return cb(karing::http::error(HttpStatusCode::k500InternalServerError, "E_INTERNAL", "Resequence failed"));
+  }
+
+  Json::Value out = Json::arrayValue;
+  for (const auto& record : resequenced->first) {
+    out.append(karing::http::record_to_json(record));
+  }
+  Json::Value meta(Json::objectValue);
+  meta["count"] = static_cast<int>(resequenced->first.size());
+  meta["next_id"] = resequenced->second;
+  return cb(karing::http::ok(out, meta));
+}
+
 void karing_root_controller::put_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
   const auto& options = karing::options::current();
   const auto service = make_root_service();
