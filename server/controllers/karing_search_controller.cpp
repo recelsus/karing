@@ -6,6 +6,7 @@
 #include <drogon/drogon.h>
 
 #include "dao/karing_dao.h"
+#include "http/record_json.h"
 #include "utils/json_response.h"
 #include "utils/options.h"
 #include "utils/search_query.h"
@@ -17,18 +18,6 @@ using drogon::HttpStatusCode;
 namespace karing::controllers {
 
 namespace {
-
-Json::Value record_to_json(const dao::KaringRecord& r) {
-  Json::Value j;
-  j["id"] = r.id;
-  j["is_file"] = r.is_file;
-  if (!r.is_file && !r.content.empty()) j["content"] = r.content;
-  if (!r.filename.empty()) j["filename"] = r.filename;
-  if (!r.mime.empty()) j["mime"] = r.mime;
-  j["created_at"] = Json::Int64(r.created_at);
-  if (r.updated_at) j["updated_at"] = Json::Int64(*r.updated_at);
-  return j;
-}
 
 std::optional<dao::SortField> parse_sort_field(const std::string& value) {
   if (value.empty() || value == "id") return dao::SortField::id;
@@ -119,7 +108,7 @@ void karing_search_controller::search(const HttpRequestPtr& req, std::function<v
   meta["order"] = get_str("order").empty() ? "desc" : get_str("order");
 
   Json::Value data = Json::arrayValue;
-  for (auto& record : list) data.append(record_to_json(record));
+  for (auto& record : list) data.append(karing::http::record_to_json(record));
   return cb(karing::http::ok(data, meta));
 }
 

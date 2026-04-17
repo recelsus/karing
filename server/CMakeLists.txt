@@ -14,6 +14,10 @@ target_link_libraries(karing_core
 add_library(karing_server OBJECT
   init/cli_output.cpp
   init/bootstrap.cpp
+  http/request_params.cpp
+  http/record_json.cpp
+  http/download_response.cpp
+  services/root_service.cpp
   controllers/karing_root_controller.cpp
   controllers/karing_search_controller.cpp
   controllers/karing_search_live_controller.cpp
