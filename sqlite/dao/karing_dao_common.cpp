@@ -1,10 +1,6 @@
 #include "karing_dao_internal.h"
 
 #include <chrono>
-#include <filesystem>
-#include <fstream>
-
-namespace fs = std::filesystem;
 
 namespace karing::dao {
 
@@ -95,26 +91,6 @@ bool read_entry_file_path(sqlite3* db, int id, std::string& file_path) {
   }
   sqlite3_finalize(stmt);
   return ok;
-}
-
-void remove_file_if_any(const std::string& path) {
-  if (path.empty()) return;
-  std::error_code ec;
-  fs::remove(path, ec);
-}
-
-bool write_file_for_slot(const std::string& upload_root, int id, const std::string& data, std::string& out_path) {
-  if (upload_root.empty()) return false;
-  std::error_code ec;
-  fs::create_directories(upload_root, ec);
-  if (ec) return false;
-
-  const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-  out_path = (fs::path(upload_root) / ("entry_" + std::to_string(id) + "_" + std::to_string(stamp))).string();
-  std::ofstream ofs(out_path, std::ios::binary | std::ios::trunc);
-  if (!ofs.is_open()) return false;
-  ofs.write(data.data(), static_cast<std::streamsize>(data.size()));
-  return ofs.good();
 }
 
 bool fetch_slot_state(sqlite3* db, int& id, int& max_items) {

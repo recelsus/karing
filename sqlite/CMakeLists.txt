@@ -4,6 +4,10 @@ add_library(karing_sqlite STATIC
   db/db_resize.cpp
   db/db_init.cpp
   db/db_introspection.cpp
+  storage/file_storage.cpp
+  store/entry_store.cpp
+  repository/entry_repository.cpp
+  repository/store_state_repository.cpp
   dao/karing_dao_common.cpp
   dao/karing_dao_read.cpp
   dao/karing_dao_write.cpp
