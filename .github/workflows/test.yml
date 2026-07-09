@@ -1,0 +1,42 @@
+name: test
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'server/**'
+      - 'sqlite/**'
+      - 'cli/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'sqlite/**'
+      - 'cli/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/test.yml'
+  workflow_dispatch: {}
+
+jobs:
+  ctest:
+    runs-on: ubuntu-latest
+    container: drogonframework/drogon:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          apt-get update
+          apt-get install -y cmake ninja-build git pkg-config libcurl4-openssl-dev libjsoncpp-dev sqlite3
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DKARING_BUILD_SERVER=ON \
+            -DKARING_BUILD_CLI=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

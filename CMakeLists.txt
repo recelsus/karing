@@ -76,8 +76,6 @@ if (EXISTS ${CMAKE_BINARY_DIR}/compile_commands.json)
   endif()
 endif()
 
-# Tests are currently not built. The previous test tree has been removed
-# during the v2 migration and will be replaced after the new API settles.
 include(CTest)
 
 if(BUILD_TESTING)

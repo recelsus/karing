@@ -258,6 +258,12 @@ void test_resequence_entries_compacts_ids_from_one() {
   const auto first = dao.get_by_id(1);
   expect(first.has_value(), "first resequenced slot should exist");
   expect(first->filename == "slot-three.txt", "oldest active entry should move to id 1");
+  std::string mime;
+  std::string filename;
+  std::string data;
+  expect(dao.get_file_blob(1, mime, filename, data), "resequence should preserve moved file blob");
+  expect(filename == "slot-three.txt", "resequence should preserve moved filename");
+  expect(data == "slot-three", "resequence should preserve moved file data");
   expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=2;") == "slot-one",
          "second active entry should move to id 2");
   expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=3;") == "slot-four",
@@ -265,6 +271,22 @@ void test_resequence_entries_compacts_ids_from_one() {
   expect(query_int(db.handle, "SELECT used FROM entries WHERE id=4;") == 0, "slot 4 should be cleared");
   expect(query_int(db.handle, "SELECT next_id FROM store_state WHERE singleton_id=1;") == 4,
          "next_id should point to first cleared slot");
+}
+
+void test_resequence_full_store_resets_next_id_to_one() {
+  const auto env = make_temp_env("resequence-full");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 3, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("one") == 1, "slot 1 insert");
+  expect(dao.insert_text("two") == 2, "slot 2 insert");
+  expect(dao.insert_text("three") == 3, "slot 3 insert");
+
+  const auto resequenced = dao.resequence_entries();
+  expect(resequenced.has_value(), "full resequence should succeed");
+  expect(resequenced->first.size() == 3, "full resequence should keep all records");
+  expect(resequenced->second == 1, "full store should wrap next_id to 1");
 }
 
 }  // namespace
@@ -277,6 +299,7 @@ int main() {
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
       {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},
       {"resequence_entries_compacts_ids_from_one", test_resequence_entries_compacts_ids_from_one},
+      {"resequence_full_store_resets_next_id_to_one", test_resequence_full_store_resets_next_id_to_one},
   };
 
   int failed = 0;

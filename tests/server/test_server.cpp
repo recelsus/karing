@@ -264,6 +264,20 @@ void test_search_and_live_search() {
   expect(search_json["data"].isArray(), "/search data should be an array");
   expect(search_json["data"].size() >= 1, "/search should return at least one result");
 
+  auto exact_search_req = drogon::HttpRequest::newHttpRequest();
+  exact_search_req->setMethod(drogon::Get);
+  exact_search_req->setParameter("q", "alpine");
+  auto exact_search_resp = invoke([&](auto&& cb) { search_controller.search(exact_search_req, std::move(cb)); });
+  expect(exact_search_resp->getStatusCode() == drogon::k200OK, "GET /search exact term should succeed");
+  expect(response_json(exact_search_resp)["data"].size() == 1, "/search should match full terms");
+
+  auto prefix_search_req = drogon::HttpRequest::newHttpRequest();
+  prefix_search_req->setMethod(drogon::Get);
+  prefix_search_req->setParameter("q", "alp");
+  auto prefix_search_resp = invoke([&](auto&& cb) { search_controller.search(prefix_search_req, std::move(cb)); });
+  expect(prefix_search_resp->getStatusCode() == drogon::k200OK, "GET /search prefix-like term should succeed");
+  expect(response_json(prefix_search_resp)["data"].size() == 0, "/search should not behave as prefix search");
+
   karing::controllers::karing_search_live_controller live_controller;
   auto live_req = drogon::HttpRequest::newHttpRequest();
   live_req->setMethod(drogon::Get);
