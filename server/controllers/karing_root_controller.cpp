@@ -174,6 +174,39 @@ void karing_root_controller::swap_karing(const HttpRequestPtr& req, std::functio
   return cb(karing::http::ok(out));
 }
 
+void karing_root_controller::move_karing(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
+  const auto service = make_root_service();
+  const auto params = req->getParameters();
+
+  const auto id = karing::http::parse_int_param(params, "id");
+  const auto before_id = karing::http::parse_int_param(params, "before");
+  if (id.status == karing::http::int_param_status::missing ||
+      before_id.status == karing::http::int_param_status::missing) {
+    return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id and before are required"));
+  }
+  if (id.status != karing::http::int_param_status::ok ||
+      before_id.status != karing::http::int_param_status::ok) {
+    return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id and before must be integers"));
+  }
+  if (id.value == before_id.value) {
+    return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_VALIDATION", "id and before must be different"));
+  }
+
+  const auto moved = service.move_before(id.value, before_id.value);
+  if (!moved) {
+    return cb(karing::http::error(HttpStatusCode::k404NotFound, "E_NOT_FOUND", "Move failed"));
+  }
+
+  Json::Value out = Json::arrayValue;
+  for (const auto& record : moved->first) {
+    out.append(karing::http::record_to_json(record));
+  }
+  Json::Value meta(Json::objectValue);
+  meta["count"] = static_cast<int>(moved->first.size());
+  meta["next_id"] = moved->second;
+  return cb(karing::http::ok(out, meta));
+}
+
 void karing_root_controller::resequence_karing(const HttpRequestPtr&,
                                                std::function<void(const HttpResponsePtr&)>&& cb) {
   const auto service = make_root_service();

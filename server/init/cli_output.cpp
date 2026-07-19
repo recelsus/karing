@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "version.h"
+#include "karing_version.h"
 
 namespace karing::app::init {
 

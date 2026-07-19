@@ -2,54 +2,120 @@
 # OS / Editor / IDE
 # -----------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
 Desktop.ini
+
 *.swp
 *.swo
 *~
-.tags
-tags
+*.orig
+*.rej
+*.bak
+*.backup
+
 .idea/
 .vscode/
+.vs/
 .history/
 .cache/
 .ccache/
-*.orig
-*.rej
+
+.claude/
+.gemini/
+.continue/
+.cursor/
+.aider*
+.codex/
+.codex-log/
+sessions/
+archived_sessions/
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+GEMINI.md
+*.local.md
+
+tags
+.tags
 
 # -----------------------------
-# Build System (CMake, Make, Ninja, etc.)
+# Local environment / secrets
 # -----------------------------
-/build/
+.env
+.env.*
+!.env.example
+
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+ssl/
+
+config.local.json
+settings.local.json
+
+# -----------------------------
+# Logs / runtime / temporary files
+# -----------------------------
+*.log
+logs/
+*.pid
+*.sock
+tmp/
+temp/
+run/
+*.tmp
+*.temp
+core
+core.*
+
+# -----------------------------
+# Build directories
+# -----------------------------
+build/
 /build-*/
 /cmake-build-*/
+bin/
+obj/
+out/
+dist/
 
-# CMake中間物
+# -----------------------------
+# CMake / Make / Ninja
+# -----------------------------
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
 DartConfiguration.tcl
 Testing/
+compile_commands.json
+
 _install/
 _depends/
-# Dependency with FetchContent or CPM.cmake
+_deps/
 /_deps/
 
-# Ninja
 .build/
 .ninja_deps
 .ninja_log
 build.ninja
 
-# Make
+# -----------------------------
+# C / C++ objects, libraries, binaries
+# -----------------------------
 *.o
 *.lo
 *.obj
 *.gch
 *.pch
 
-# Library / Binary
 *.a
 *.la
 *.lib
@@ -61,18 +127,19 @@ build.ninja
 *.out
 *.app
 
-# LTO and Debug Symbols
 *.lto
 *.dSYM/
 *.pdb
 
-# -----------------------------
-# Tooling / Analysis
-# -----------------------------
-compile_commands.json
-.ccls-cache/
+# Visual Studio project output
+*.vcxproj
+*.vcxproj.filters
+*.sln
 
-# AST / IR
+# -----------------------------
+# Tooling / analysis / coverage
+# -----------------------------
+.ccls-cache/
 *.gcno
 *.gcda
 *.gcov
@@ -82,50 +149,105 @@ lcov.info
 coverage/
 sanitizer*.log
 valgrind*.log
+vgcore.*
+*.memcheck
+.gdb_history
 
 # -----------------------------
-# Temporary Files / Logs
+# Package managers / dependencies
 # -----------------------------
-*.log
-logs/
-*.pid
-*.sock
-tmp/
-run/
+.conan/
+conanbuild/
+conaninfo.txt
+
+vcpkg_installed/
+vcpkg*.log
+
+CPMCache/
+
+node_modules/
+.venv/
+venv/
+__pycache__/
 
 # -----------------------------
-# SQLite Files
+# SQLite / local data
 # -----------------------------
 *.db
 *.db-shm
 *.db-wal
 
 # -----------------------------
-# certificates / Keys
+# Docker / local runtime data
 # -----------------------------
-*.pem
-*.crt
-*.key
+docker/data/
+docker/volumes/
+docker/docker-compose.yml
 
 # -----------------------------
-# package managers
+# Documentation / TeX / Typst
 # -----------------------------
-# Conan
-.conan/
-conanbuild/
-conaninfo.txt
+docs/_build/
+doc/_build/
 
-# vcpkg
-vcpkg_installed/
-vcpkg*.log
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+*.toc
+*.lof
+*.lot
+*.xdv
+*.nav
+*.snm
+*.vrb
+*.out.ps
+*.ilg
+*.ind
+*.idx
+*.thm
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.ist
 
-# CPM.cmake cache
-CPMCache/
+.minted-*/
+_minted-*/
+.minted-cache/
+*.pyg
 
 # -----------------------------
-# Containerization
+# Archives / generated packages
 # -----------------------------
-.env
-.env.*
-dist/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
 
+# -----------------------------
+# Local reference sources
+# -----------------------------
+reference/
+notes/
+
+# -----------------------------
+# Project-specific ignores
+# -----------------------------
+# Uncomment or adapt these entries when they match the target project.
+
+# .clasp.json
+# env.ts
+
+# /build-*/
+# third_party/**/build/
+# third_party/**/build-*/
+# third_party/**/.ninja_*
+# third_party/**/CMakeCache.txt
+# third_party/**/CMakeFiles/

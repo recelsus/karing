@@ -7,6 +7,8 @@ Basic form
 - RAW response: endpoints such as `GET /` return `text/plain` or the file body directly
 - successful `DELETE` returns `204 No Content`
 
+Error `message` is intended for users. Internal detail is omitted by default and appears in `details` only when the server is started with `--error-detail` or `KARING_ERROR_DETAIL=1`.
+
 ## GET /
 
 #### request:
@@ -189,6 +191,43 @@ Host: localhost:8080
 }
 ```
 
+## POST /move?id=5&before=2
+
+Moves the record at `id` before the record at `before`, shifting the records between them.
+For example, moving `5` before `2` changes `a b c d e` into `a e b c d`.
+
+#### request:
+
+```http
+POST /move?id=5&before=2 HTTP/1.1
+Host: localhost:8080
+```
+
+#### response:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": [
+    {
+      "id": 1,
+      "is_file": false,
+      "content": "a"
+    },
+    {
+      "id": 2,
+      "is_file": false,
+      "content": "e"
+    }
+  ],
+  "meta": {
+    "count": 5,
+    "next_id": 1
+  }
+}
+```
+
 ## DELETE /?id=9
 
 #### request:
@@ -357,7 +396,7 @@ Accept: application/json
     "log": "/home/user/.local/state/karing/logs"
   },
   "listener": {
-    "address": "0.0.0.0",
+    "address": "127.0.0.1",
     "port": 8080
   },
   "db": {

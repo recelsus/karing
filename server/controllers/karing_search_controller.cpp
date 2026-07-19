@@ -4,6 +4,7 @@
 
 #include <drogon/drogon.h>
 
+#include "common/error/app_error.h"
 #include "http/record_json.h"
 #include "services/search_service.h"
 #include "utils/json_response.h"
@@ -44,16 +45,28 @@ void karing_search_controller::search(const HttpRequestPtr& req, std::function<v
 
   switch (result.error) {
     case services::search_error::invalid_sort:
-      return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid sort"));
+      return cb(karing::http::error(HttpStatusCode::k400BadRequest,
+                                    karing::domain::make_error(karing::domain::error_category::query,
+                                                               karing::domain::error_code::query,
+                                                               "Invalid sort"),
+                                    options.show_error_details));
     case services::search_error::invalid_order:
-      return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid order"));
+      return cb(karing::http::error(HttpStatusCode::k400BadRequest,
+                                    karing::domain::make_error(karing::domain::error_category::query,
+                                                               karing::domain::error_code::query,
+                                                               "Invalid order"),
+                                    options.show_error_details));
     case services::search_error::invalid_query: {
       Json::Value detail;
       if (result.detail_reason.has_value()) detail["reason"] = *result.detail_reason;
       return cb(karing::http::error(HttpStatusCode::k400BadRequest, "E_QUERY", "Invalid search query", detail));
     }
     case services::search_error::fts_unavailable:
-      return cb(karing::http::error(HttpStatusCode::k503ServiceUnavailable, "E_FTS_UNAVAILABLE", "Full-text search unavailable"));
+      return cb(karing::http::error(HttpStatusCode::k503ServiceUnavailable,
+                                    karing::domain::make_error(karing::domain::error_category::unavailable,
+                                                               karing::domain::error_code::fts_unavailable,
+                                                               "Full-text search unavailable"),
+                                    options.show_error_details));
     case services::search_error::none:
     case services::search_error::missing_query:
       break;

@@ -7,7 +7,7 @@ on:
       - 'server/**'
       - 'sqlite/**'
       - 'cli/**'
-      - '.github/**'
+      - '.github/workflows/docker.yml'
       - 'docker/**'
       - 'CMakeLists.txt'
   workflow_dispatch:
@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   build-and-push:
+    if: ${{ github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     env:
       GHCR_HAS_PAT: ${{ secrets.GHCR_PAT != '' }}
@@ -66,6 +67,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |
+            KARING_CLI_ENABLE_HTTP_BACKEND=OFF
           push: true
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}

@@ -7,7 +7,7 @@
 #include "db/db_introspection.h"
 #include "utils/options.h"
 #include "utils/limits.h"
-#include "version.h"
+#include "karing_version.h"
 
 namespace karing::controllers {
 

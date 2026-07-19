@@ -1,6 +1,9 @@
-find_package(CURL REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
+
+if(KARING_CLI_ENABLE_HTTP_BACKEND)
+  find_package(CURL REQUIRED)
+endif()
 
 set(JSONCPP_STATIC_LIBRARY "")
 
@@ -46,23 +49,34 @@ else()
   target_link_libraries(karing_jsoncpp INTERFACE ${JSONCPP_LINK_LIBRARIES})
 endif()
 
-add_library(karing_cli_core STATIC
-  http/http_client.cpp
-  utils/auth_cache.cpp
+set(KARING_CLI_CORE_SOURCES
+  backend/sqlite_backend.cpp
+  backend/target.cpp
   utils/arg_utils.cpp
   utils/cli_output.cpp
   utils/io.cpp
   utils/mime.cpp
   utils/url.cpp
-  commands/add_command.cpp
-  commands/delete_command.cpp
-  commands/find_command.cpp
-  commands/get_command.cpp
-  commands/health_command.cpp
-  commands/mod_command.cpp
-  commands/resequence_command.cpp
-  commands/swap_command.cpp
   app.cpp
+)
+
+if(KARING_CLI_ENABLE_HTTP_BACKEND)
+  list(APPEND KARING_CLI_CORE_SOURCES
+    http/http_client.cpp
+    utils/auth_cache.cpp
+    commands/add_command.cpp
+    commands/delete_command.cpp
+    commands/find_command.cpp
+    commands/get_command.cpp
+    commands/mod_command.cpp
+    commands/move_command.cpp
+    commands/resequence_command.cpp
+    commands/swap_command.cpp
+  )
+endif()
+
+add_library(karing_cli_core STATIC
+  ${KARING_CLI_CORE_SOURCES}
 )
 
 target_include_directories(karing_cli_core
@@ -70,9 +84,19 @@ target_include_directories(karing_cli_core
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(karing_cli_core
-  PRIVATE karing_project_options CURL::libcurl karing_jsoncpp
+target_compile_definitions(karing_cli_core
+  PUBLIC KARING_CLI_ENABLE_HTTP_BACKEND=$<BOOL:${KARING_CLI_ENABLE_HTTP_BACKEND}>
 )
+
+target_link_libraries(karing_cli_core
+  PRIVATE karing_project_options karing_sqlite karing_jsoncpp
+)
+
+if(KARING_CLI_ENABLE_HTTP_BACKEND)
+  target_link_libraries(karing_cli_core
+    PRIVATE CURL::libcurl
+  )
+endif()
 
 add_executable(karing
   main.cpp
@@ -84,7 +108,7 @@ target_include_directories(karing
 )
 
 target_link_libraries(karing
-  PRIVATE karing_project_options karing_cli_core CURL::libcurl karing_jsoncpp
+  PRIVATE karing_project_options karing_cli_core karing_sqlite karing_jsoncpp
 )
 
 install(TARGETS karing RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

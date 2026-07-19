@@ -1,4 +1,4 @@
-name: test
+name: ci
 
 on:
   push:
@@ -9,15 +9,16 @@ on:
       - 'cli/**'
       - 'tests/**'
       - 'CMakeLists.txt'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/ci.yml'
   pull_request:
+    branches: [ master ]
     paths:
       - 'server/**'
       - 'sqlite/**'
       - 'cli/**'
       - 'tests/**'
       - 'CMakeLists.txt'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch: {}
 
 jobs:
@@ -40,3 +41,22 @@ jobs:
         run: cmake --build build -j
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  sqlite-only-cli:
+    runs-on: ubuntu-latest
+    container: drogonframework/drogon:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          apt-get update
+          apt-get install -y cmake ninja-build git pkg-config libjsoncpp-dev sqlite3
+      - name: Configure
+        run: |
+          cmake -S . -B build-cli-sqlite-only -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DKARING_BUILD_SERVER=OFF \
+            -DKARING_BUILD_CLI=ON \
+            -DKARING_CLI_ENABLE_HTTP_BACKEND=OFF \
+            -DBUILD_TESTING=OFF
+      - name: Build
+        run: cmake --build build-cli-sqlite-only -j

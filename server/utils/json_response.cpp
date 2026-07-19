@@ -38,4 +38,15 @@ HttpResponsePtr error(HttpStatusCode status,
   return resp;
 }
 
+HttpResponsePtr error(HttpStatusCode status,
+                      const karing::domain::app_error& error_value,
+                      bool include_detail) {
+  Json::Value details;
+  if (include_detail && error_value.detail.has_value()) {
+    details = Json::Value(Json::objectValue);
+    details["detail"] = *error_value.detail;
+  }
+  return error(status, karing::domain::to_code_string(error_value.code), error_value.message, std::move(details));
+}
+
 }

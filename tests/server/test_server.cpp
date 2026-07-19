@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -10,6 +11,14 @@
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 #include <json/json.h>
+#include <sqlite3.h>
+
+#if !defined(_WIN32)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include "controllers/health_controller.h"
 #include "controllers/karing_root_controller.h"
@@ -17,6 +26,13 @@
 #include "controllers/karing_search_live_controller.h"
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
+#include "db/sqlite_connection.h"
+#include "common/error/app_error.h"
+#include "repository/entry_repository.h"
+#include "services/root_service.h"
+#include "utils/base_path.h"
+#include "utils/json_response.h"
+#include "utils/listen_probe.h"
 #include "utils/upload_mime.h"
 #include "utils/limits.h"
 #include "utils/options.h"
@@ -90,6 +106,21 @@ drogon::HttpRequestPtr make_json_request(drogon::HttpMethod method, const Json::
 void test_options_parse_modes() {
   {
     char arg0[] = "karing";
+    char* argv[] = {arg0};
+    auto parsed = karing::options::parse(1, argv);
+    expect(parsed.listen_address == "127.0.0.1", "default listen address should be loopback");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "--error-detail";
+    char* argv[] = {arg0, arg1};
+    auto parsed = karing::options::parse(2, argv);
+    expect(parsed.show_error_details, "--error-detail should enable detailed errors");
+  }
+
+  {
+    char arg0[] = "karing";
     char arg1[] = "--check-db";
     char* argv[] = {arg0, arg1};
     auto parsed = karing::options::parse(2, argv);
@@ -115,6 +146,80 @@ void test_options_parse_modes() {
     auto parsed = karing::options::parse(3, argv);
     expect(parsed.action_kind == karing::options::action::error, "conflicting db modes should be rejected");
   }
+}
+
+void test_common_http_error_response_hides_and_shows_detail() {
+  const auto error = karing::domain::make_error(karing::domain::error_category::database,
+                                                karing::domain::error_code::sqlite_io,
+                                                "Database unavailable",
+                                                "disk I/O detail");
+
+  const auto hidden = karing::http::error(drogon::k500InternalServerError, error, false);
+  const auto hidden_json = response_json(hidden);
+  expect(hidden_json["success"].asBool() == false, "common HTTP error should mark failure");
+  expect(hidden_json["code"].asString() == "E_SQLITE_IO", "common HTTP error should expose stable code");
+  expect(hidden_json["message"].asString() == "Database unavailable", "common HTTP error should expose user message");
+  expect(!hidden_json.isMember("details"), "common HTTP error should hide detail by default");
+
+  const auto shown = karing::http::error(drogon::k500InternalServerError, error, true);
+  const auto shown_json = response_json(shown);
+  expect(shown_json["details"]["detail"].asString() == "disk I/O detail",
+         "common HTTP error should include detail when enabled");
+}
+
+void test_base_path_normalization() {
+  expect(karing::base_path::normalize("") == "/", "empty base path should normalize to root");
+  expect(karing::base_path::normalize("/") == "/", "root base path should stay root");
+  expect(karing::base_path::normalize("karing") == "/karing", "path should gain leading slash");
+  expect(karing::base_path::normalize("/karing/") == "/karing", "path should lose trailing slash");
+  expect(karing::base_path::normalize("https://example.test/karing/") == "/karing",
+         "full URL should normalize to path");
+  expect(karing::base_path::normalize("https://example.test/karing/?x=1#top") == "/karing",
+         "full URL should drop query and fragment");
+  expect(karing::base_path::normalize("https://example.test") == "/",
+         "origin-only URL should normalize to root");
+
+  expect(karing::base_path::matches("/", "/find"), "root base path should match any path");
+  expect(karing::base_path::matches("/api", "/api"), "base path should match exact path");
+  expect(karing::base_path::matches("/api", "/api/"), "base path should match trailing slash");
+  expect(karing::base_path::matches("/api", "/api/find"), "base path should match nested path");
+  expect(!karing::base_path::matches("/api", "/find"), "base path should reject root API path");
+  expect(!karing::base_path::matches("/api", "/api2"), "base path should reject prefix collision");
+  expect(!karing::base_path::matches("/api", "/apis"), "base path should reject plural prefix collision");
+  expect(karing::base_path::strip("/api", "/api") == "/", "exact base path should strip to root");
+  expect(karing::base_path::strip("/api", "/api/find") == "/find", "nested base path should strip prefix");
+}
+
+void test_listen_probe_rejects_used_port() {
+#if defined(_WIN32)
+  return;
+#else
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) return;
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  addr.sin_port = 0;
+  if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    close(fd);
+    throw test_failure("test listener socket should bind");
+  }
+
+  socklen_t len = sizeof(addr);
+  if (getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+    close(fd);
+    throw test_failure("test listener socket should report port");
+  }
+
+  const int port = ntohs(addr.sin_port);
+  const auto unavailable = karing::listen_probe::check_available("127.0.0.1", port);
+  close(fd);
+
+  expect(!unavailable.ok, "listen probe should reject an already bound port");
+  expect(unavailable.error.find("127.0.0.1:" + std::to_string(port)) != std::string::npos,
+         "listen probe error should include address and port");
+#endif
 }
 
 void test_root_json_crud_and_delete() {
@@ -209,17 +314,68 @@ void test_root_swap() {
   expect(same_swap_resp->getStatusCode() == drogon::k400BadRequest, "POST /swap should reject same ids");
 }
 
+void test_root_move() {
+  const auto env = make_temp_env("move");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+  set_current_options(env);
+
+  karing::dao::KaringDao dao(env.db_path.string());
+  expect(dao.insert_text("a") == 1, "insert slot 1");
+  expect(dao.insert_text("b") == 2, "insert slot 2");
+  expect(dao.insert_text("c") == 3, "insert slot 3");
+  expect(dao.insert_text("d") == 4, "insert slot 4");
+  expect(dao.insert_text("e") == 5, "insert slot 5");
+
+  auto move_req = drogon::HttpRequest::newHttpRequest();
+  move_req->setMethod(drogon::Post);
+  move_req->setParameter("id", "5");
+  move_req->setParameter("before", "2");
+  karing::controllers::karing_root_controller controller;
+  auto move_resp = invoke([&](auto&& cb) { controller.move_karing(move_req, std::move(cb)); });
+  expect(move_resp->getStatusCode() == drogon::k200OK, "POST /move should succeed");
+
+  auto json = response_json(move_resp);
+  expect(json["data"].isArray(), "move response should return an array");
+  expect(json["data"].size() == 5, "move response should return active records");
+  expect(json["meta"]["next_id"].asInt() == 1, "move should return next_id");
+  expect(dao.get_by_id(1)->content == "a", "slot 1 should remain a");
+  expect(dao.get_by_id(2)->content == "e", "slot 2 should become e");
+  expect(dao.get_by_id(3)->content == "b", "slot 3 should become b");
+  expect(dao.get_by_id(4)->content == "c", "slot 4 should become c");
+  expect(dao.get_by_id(5)->content == "d", "slot 5 should become d");
+
+  auto same_move_req = drogon::HttpRequest::newHttpRequest();
+  same_move_req->setMethod(drogon::Post);
+  same_move_req->setParameter("id", "2");
+  same_move_req->setParameter("before", "2");
+  auto same_move_resp = invoke([&](auto&& cb) { controller.move_karing(same_move_req, std::move(cb)); });
+  expect(same_move_resp->getStatusCode() == drogon::k400BadRequest, "POST /move should reject same ids");
+}
+
 void test_root_resequence() {
   const auto env = make_temp_env("resequence");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
   set_current_options(env);
 
-  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  karing::dao::KaringDao dao(env.db_path.string());
   expect(dao.insert_text("one") == 1, "insert slot 1");
   expect(dao.insert_text("two") == 2, "insert slot 2");
   expect(dao.insert_text("three") == 3, "insert slot 3");
-  expect(dao.logical_delete(2), "delete slot 2");
   expect(dao.insert_text("four") == 4, "insert slot 4");
+
+  {
+    karing::db::sqlite_connection db;
+    db.open(env.db_path.string(), karing::db::sqlite_access::read_write);
+    char* errmsg = nullptr;
+    sqlite3_exec(db.get(),
+                 "UPDATE entries SET used=0, source_kind=NULL, media_kind=NULL, content_text=NULL, file_path=NULL, "
+                 "original_filename=NULL, mime_type=NULL, size_bytes=0, stored_at=NULL, updated_at=NULL WHERE id=2;"
+                 "UPDATE store_state SET next_id=5 WHERE singleton_id=1;",
+                 nullptr,
+                 nullptr,
+                 &errmsg);
+    if (errmsg) sqlite3_free(errmsg);
+  }
 
   auto resequence_req = drogon::HttpRequest::newHttpRequest();
   resequence_req->setMethod(drogon::Post);
@@ -334,6 +490,72 @@ void test_upload_mime_support() {
   expect(karing::upload_mime::normalise("application/octet-stream", "index.ts") == "text/plain", "ts should infer text/plain");
 }
 
+void test_root_service_delete_removes_file_body() {
+  const auto env = make_temp_env("delete-file");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+
+  karing::services::root_service service(env.db_path.string(), env.upload_path.string());
+  const int id = service.create_file("delete.txt", "text/plain", "delete-body");
+  expect(id == 1, "file insert should succeed");
+
+  const auto file_count = [&]() {
+    return static_cast<int>(std::distance(fs::directory_iterator(env.upload_path), fs::directory_iterator{}));
+  };
+  expect(file_count() == 1, "file body should exist before delete");
+
+  expect(service.delete_by_id(id), "delete_by_id should succeed");
+  expect(file_count() == 0, "root_service should remove file body after delete");
+  expect(!service.record_by_id(id).has_value(), "deleted slot should be cleared");
+}
+
+void test_root_service_replace_text_removes_file_body() {
+  const auto env = make_temp_env("replace-file-text");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+
+  karing::services::root_service service(env.db_path.string(), env.upload_path.string());
+  const int id = service.create_file("replace.txt", "text/plain", "replace-body");
+  expect(id == 1, "file insert should succeed");
+
+  const auto file_count = [&]() {
+    return static_cast<int>(std::distance(fs::directory_iterator(env.upload_path), fs::directory_iterator{}));
+  };
+  expect(file_count() == 1, "file body should exist before replace");
+
+  expect(service.replace_text(id, "plain text"), "replace_text should succeed");
+  expect(file_count() == 0, "root_service should remove file body after text replace");
+  const auto record = service.record_by_id(id);
+  expect(record.has_value(), "replaced text record should exist");
+  expect(!record->is_file && record->content == "plain text", "slot should become a text record");
+}
+
+void test_root_service_delete_keeps_record_when_file_remove_fails() {
+  const auto env = make_temp_env("delete-file-fails");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+
+  karing::services::root_service service(env.db_path.string(), env.upload_path.string());
+  const int id = service.create_file("blocked.txt", "text/plain", "blocked-body");
+  expect(id == 1, "file insert should succeed");
+
+  karing::repository::entry_repository repo(env.db_path.string());
+  karing::dao::KaringRecord record{};
+  std::string file_path;
+  expect(repo.get_file_record(id, record, file_path), "file path should be readable");
+  expect(!file_path.empty(), "file path should not be empty");
+
+  std::error_code ec;
+  fs::remove(file_path, ec);
+  expect(!ec, "test should remove original file body");
+  fs::create_directories(file_path, ec);
+  expect(!ec, "test should create blocking directory at file path");
+  {
+    std::ofstream child(fs::path(file_path) / "child.txt", std::ios::binary);
+    child << "child";
+  }
+
+  expect(!service.delete_by_id(id), "delete_by_id should fail when file body removal fails");
+  expect(service.record_by_id(id).has_value(), "record should remain when file body removal fails");
+}
+
 void test_root_file_and_text_file_responses() {
   const auto env = make_temp_env("files");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -408,9 +630,16 @@ void test_root_file_and_text_file_responses() {
 int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"options_parse_modes", test_options_parse_modes},
+      {"common_http_error_response_hides_and_shows_detail", test_common_http_error_response_hides_and_shows_detail},
+      {"base_path_normalization", test_base_path_normalization},
+      {"listen_probe_rejects_used_port", test_listen_probe_rejects_used_port},
       {"root_json_crud_and_delete", test_root_json_crud_and_delete},
       {"root_swap", test_root_swap},
+      {"root_move", test_root_move},
       {"root_resequence", test_root_resequence},
+      {"root_service_delete_removes_file_body", test_root_service_delete_removes_file_body},
+      {"root_service_replace_text_removes_file_body", test_root_service_replace_text_removes_file_body},
+      {"root_service_delete_keeps_record_when_file_remove_fails", test_root_service_delete_keeps_record_when_file_remove_fails},
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},
       {"health_response", test_health_response},

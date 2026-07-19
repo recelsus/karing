@@ -38,14 +38,42 @@ DrogonベースのPastebin風APIサーバー。
   - イメージ: `ghcr.io/recelsus/karing:latest`
   - 例:
     `docker run -p 8080:8080 ghcr.io/recelsus/karing:latest`
+  - イメージでは `KARING_LISTEN=0.0.0.0` を明示設定しています。
 
 - ビルド
   - `docs/build-ja.md` を参照。
 
+## CLI
+
+`karing` は `KARING_TARGET` に対して操作します。command単位で上書きする場合は `--target` を指定します。
+
+- `--target http://...` または `--target https://...`
+  - HTTP backend
+- `--target <path>`
+  - local SQLite backend path
+
+例:
+
+```bash
+karing init-db ./karing.sqlite --limit 100
+KARING_TARGET=http://127.0.0.1:8080 karing add "server note"
+KARING_TARGET=http://127.0.0.1:8080 karing find server
+karing --target ./karing.sqlite add "local note"
+```
+
+SQLite target では text add/get/find/mod/delete、`swap`、`move`、`resequence`、file metadata 表示に対応します。file upload、file replace、file record削除、file body読み取りはHTTP backendの操作です。
+
+`--url`、`KARING_URL`、`--id` はサポートしません。`--target` または `KARING_TARGET` のどちらかが必要です。
+
+local SQLite database の lock が busy timeout を超えて残る場合、plain output は `ERROR: database is busy`、JSON output は `E_SQLITE_BUSY` を返します。
+
 ## Run Options
 
 - サーバー設定は CLI オプションと環境変数だけで与えます。
+- 公開利用ではリバースプロキシ配下を推奨し、TLS終端はプロキシ側で行う想定です。
 - 既定パス:
+  - listen: `127.0.0.1:8080`
+  - Docker image listen: `0.0.0.0:8080`
   - DB: `/var/lib/karing/karing.sqlite`
   - フォールバックDB: 既定位置が使えない場合は `$XDG_DATA_HOME/karing/karing.sqlite`
   - `XDG_DATA_HOME` が無ければ `$HOME/.local/share/karing/karing.sqlite`
@@ -56,10 +84,12 @@ DrogonベースのPastebin風APIサーバー。
   - `KARING_LISTEN`, `KARING_PORT`
   - `KARING_DB_PATH`, `KARING_UPLOAD_PATH`, `KARING_LOG_PATH`
   - `KARING_LIMIT`, `KARING_MAX_FILE`, `KARING_MAX_TEXT`
+  - `KARING_BASE_PATH`, `KARING_ERROR_DETAIL`, `KARING_TARGET`
 
 - CLI options:
   - `--listen`, `--port`, `--db-path`, `--upload-path`
   - `--limit`, `--max-file`, `--max-text`
+  - `--error-detail`
   - `--max-file` と `--max-text` は MB 指定
 
 - 詳細は `docs/option-ja.md` を参照。
@@ -92,6 +122,11 @@ DrogonベースのPastebin風APIサーバー。
   - ID自体は変わらず、各スロットの内容だけを交換
   - 応答では入れ替え後の2レコードを配列で返却
 
+- `POST /move?id=<id>&before=<id>`
+  - 1つのIDを別IDの直前へ移動し、間のレコードをずらす
+  - 例: `5` を `2` の前へ移動すると `a b c d e` は `a e b c d` になる
+  - 応答では active レコード配列と `next_id` を返却
+
 - `POST /resequence`
   - active レコードを `stored_at asc, id asc` で `1..n` に詰め直し
   - 空スロットは末尾へ寄せる
@@ -122,7 +157,9 @@ DrogonベースのPastebin風APIサーバー。
 - `GET /health`
   - サービス状態と DB 情報を JSON で返却
 
-- base_path指定時は `<base_path>/`、`<base_path>/swap`、`<base_path>/resequence`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
+- base_path指定時は `<base_path>/`、`<base_path>/swap`、`<base_path>/move`、`<base_path>/resequence`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
+- `base_path` が `/` 以外の場合、`<base_path>` 外の request は `404` を返します。
+- `base_path` は `/karing` のような path または `https://example.test/karing` のような URL 全体で指定できます。内部では path 部分だけを使います。
 
 リクエスト例とレスポンス例は `docs/requests-ja.md` を参照してください。
 

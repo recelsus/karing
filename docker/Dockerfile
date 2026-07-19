@@ -2,8 +2,10 @@
 
 ARG BUILDER_IMAGE=drogonframework/drogon:latest
 ARG RUNTIME_IMAGE=debian:bookworm-slim
+ARG KARING_CLI_ENABLE_HTTP_BACKEND=OFF
 
 FROM ${BUILDER_IMAGE} AS builder
+ARG KARING_CLI_ENABLE_HTTP_BACKEND
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     build-essential cmake ninja-build git \
@@ -16,6 +18,7 @@ COPY . .
 RUN cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DKARING_BUILD_SERVER=ON \
     -DKARING_BUILD_CLI=ON \
+    -DKARING_CLI_ENABLE_HTTP_BACKEND=${KARING_CLI_ENABLE_HTTP_BACKEND} \
  && cmake --build build -j \
  && strip build/server/karing-server \
  && strip build/cli/karing
@@ -28,9 +31,10 @@ FROM ${RUNTIME_IMAGE} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     XDG_DATA_HOME=/var/lib/karing \
     KARING_DB_PATH=/var/lib/karing/karing.sqlite \
+    KARING_TARGET=/var/lib/karing/karing.sqlite \
     KARING_UPLOAD_PATH=/var/lib/karing/uploads \
     KARING_LOG_PATH=/var/log/karing \
-    KARING_URL=http://127.0.0.1:8080
+    KARING_LISTEN=0.0.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libbrotli1 \

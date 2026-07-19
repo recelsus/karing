@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(karing LANGUAGES CXX)
+project(karing VERSION 0.2.0 LANGUAGES CXX)
 
 # Export compile_commands.json for LSP/clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(KARING_BUILD_SERVER "Build karing-server" ON)
 option(KARING_BUILD_CLI "Build karing CLI" ON)
+option(KARING_CLI_ENABLE_HTTP_BACKEND "Build karing CLI with HTTP backend support" ON)
 
 if(NOT KARING_BUILD_SERVER AND NOT KARING_BUILD_CLI)
   message(FATAL_ERROR "At least one of KARING_BUILD_SERVER or KARING_BUILD_CLI must be ON")
@@ -20,7 +21,7 @@ if(KARING_BUILD_SERVER)
 endif()
 
 set(GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated")
-if(KARING_BUILD_SERVER)
+if(KARING_BUILD_SERVER OR KARING_BUILD_CLI)
   file(MAKE_DIRECTORY "${GENERATED_INCLUDE_DIR}")
 
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sqlite/sql/schema_base.sql" KARING_SCHEMA_BASE_SQL_RAW)
@@ -37,43 +38,52 @@ if(KARING_BUILD_SERVER)
     ${GENERATED_INCLUDE_DIR}/schema_sql.h
     @ONLY
   )
+  configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/karing_version.h.in
+    ${GENERATED_INCLUDE_DIR}/karing_version.h
+    @ONLY
+  )
 endif()
 
 add_library(karing_project_options INTERFACE)
 target_include_directories(karing_project_options INTERFACE
   ${CMAKE_SOURCE_DIR}
-  ${CMAKE_SOURCE_DIR}/server
-  ${CMAKE_SOURCE_DIR}/sqlite
   ${GENERATED_INCLUDE_DIR}
+)
+
+add_library(karing_common STATIC
+  common/error/app_error.cpp
+)
+
+target_link_libraries(karing_common
+  PUBLIC karing_project_options
+)
+
+add_library(karing_file_storage STATIC EXCLUDE_FROM_ALL
+  sqlite/storage/file_storage.cpp
+)
+
+target_link_libraries(karing_file_storage
+  PUBLIC karing_project_options
+)
+
+target_include_directories(karing_file_storage
+  PUBLIC
+    ${CMAKE_SOURCE_DIR}/sqlite
 )
 
 include(GNUInstallDirs)
 
-if(KARING_BUILD_SERVER)
+if(KARING_BUILD_SERVER OR KARING_BUILD_CLI)
   add_subdirectory(sqlite)
+endif()
+
+if(KARING_BUILD_SERVER)
   add_subdirectory(server)
 endif()
 
 if(KARING_BUILD_CLI)
   add_subdirectory(cli)
-endif()
-
-# Create/refresh a top-level compile_commands.json symlink (or copy on Windows)
-if (EXISTS ${CMAKE_BINARY_DIR}/compile_commands.json)
-  if (WIN32)
-    add_custom_target(link_compile_commands ALL
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-              ${CMAKE_BINARY_DIR}/compile_commands.json
-              ${CMAKE_SOURCE_DIR}/compile_commands.json
-      COMMENT "Copy compile_commands.json to project root for clangd")
-  else()
-    add_custom_target(link_compile_commands ALL
-      COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_SOURCE_DIR}/compile_commands.json
-      COMMAND ${CMAKE_COMMAND} -E create_symlink
-              ${CMAKE_BINARY_DIR}/compile_commands.json
-              ${CMAKE_SOURCE_DIR}/compile_commands.json
-      COMMENT "Symlink compile_commands.json to project root for clangd")
-  endif()
 endif()
 
 include(CTest)

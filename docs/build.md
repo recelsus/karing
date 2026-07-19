@@ -3,7 +3,7 @@
 The following CMake options can be used to choose what to build.
 
 - `karing-server` only
-- `karing` CLI only
+- `karing` CLI only, with either HTTP+SQLite backends or SQLite-only backend
 - both
 
 ## Dependencies
@@ -15,8 +15,8 @@ The following CMake options can be used to choose what to build.
   - SQLite3
   - JsonCpp
 - when building the CLI:
-  - libcurl
   - JsonCpp
+  - libcurl, only when `KARING_CLI_ENABLE_HTTP_BACKEND=ON`
 
 #### Linux (Ubuntu)
 
@@ -34,6 +34,8 @@ brew install drogon curl jsoncpp sqlite3
 ```
 
 ## Build
+
+`CMAKE_EXPORT_COMPILE_COMMANDS` is enabled. `compile_commands.json` is generated under the configured build directory.
 
 both:
 
@@ -62,6 +64,16 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 cmake --build build -j
 ```
 
+SQLite-only CLI:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DKARING_BUILD_SERVER=OFF \
+  -DKARING_BUILD_CLI=ON \
+  -DKARING_CLI_ENABLE_HTTP_BACKEND=OFF
+cmake --build build -j
+```
+
 - both:
   - `build/server/karing-server`
   - `build/cli/karing`
@@ -69,6 +81,21 @@ cmake --build build -j
   - `build/server/karing-server`
 - CLI only:
   - `build/cli/karing`
+
+## Build Options
+
+- `KARING_BUILD_SERVER`
+  - builds `karing-server`
+- `KARING_BUILD_CLI`
+  - builds `karing`
+- `KARING_CLI_ENABLE_HTTP_BACKEND`
+  - default: `ON`
+  - `ON`: CLI supports HTTP targets and SQLite targets
+  - `OFF`: CLI supports SQLite targets only and does not link libcurl
+
+The SQLite-only CLI option is intended for container or embedded distribution jobs that do not need HTTP calls. It is not a restriction on container builds; workflows may still build the normal CLI in a container by leaving `KARING_CLI_ENABLE_HTTP_BACKEND=ON`.
+
+The local SQLite CLI links `karing_sqlite` only. File body storage is split into `karing_file_storage` and `karing_sqlite_file`, which are linked by the server and file-operation tests, not by SQLite-only CLI builds.
 
 ## Test
 
@@ -78,6 +105,17 @@ cmake -S . -B build -DBUILD_TESTING=ON \
   -DKARING_BUILD_CLI=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
+```
+
+SQLite-only CLI build smoke test:
+
+```bash
+cmake -S . -B build-cli-sqlite-only -DCMAKE_BUILD_TYPE=Release \
+  -DKARING_BUILD_SERVER=OFF \
+  -DKARING_BUILD_CLI=ON \
+  -DKARING_CLI_ENABLE_HTTP_BACKEND=OFF \
+  -DBUILD_TESTING=OFF
+cmake --build build-cli-sqlite-only -j
 ```
 
 ## Install
@@ -93,6 +131,8 @@ sudo cmake --install build --prefix /usr/local
 ## Notes
 
 - when switching between `server only`, `CLI only`, and `both`, re-run configure against the same `build/` directory
+- when switching `KARING_CLI_ENABLE_HTTP_BACKEND`, re-run configure
+- LSPs should read `compile_commands.json` from the configured build directory
 - `Release` or `RelWithDebInfo` is recommended for production use
 - `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON` may be used if desired
 - `-DCMAKE_INSTALL_DO_STRIP=ON` may be considered for distribution builds
@@ -117,3 +157,5 @@ docker run --rm -p 8080:8080 \
   -v karing-data:/var/lib/karing \
   ghcr.io/recelsus/karing:latest
 ```
+
+The official image sets `KARING_LISTEN=0.0.0.0` explicitly. Local non-Docker server runs default to `127.0.0.1`.

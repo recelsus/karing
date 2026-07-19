@@ -12,9 +12,12 @@
 #include "db/db_introspection.h"
 #include "db/db_path.h"
 #include "init/cli_output.h"
+#include "utils/base_path.h"
+#include "utils/json_response.h"
+#include "utils/listen_probe.h"
 #include "utils/options.h"
 #include "utils/limits.h"
-#include "version.h"
+#include "karing_version.h"
 
 namespace karing::app {
 
@@ -140,7 +143,7 @@ int bootstrap::execute() {
   } catch (...) {
   }
 
-  const std::string listen_address = options.listen_address.empty() ? "0.0.0.0" : options.listen_address;
+  const std::string listen_address = options.listen_address.empty() ? "127.0.0.1" : options.listen_address;
   const int listen_port = options.port > 0 ? options.port : 8080;
   const int max_file_mb = options.max_file_bytes;
   const int max_text_mb = options.max_text_bytes;
@@ -151,6 +154,13 @@ int bootstrap::execute() {
     max_text_bytes = clamp_size(max_text_mb, karing::limits::kMaxTextMb, "max-text");
   } catch (const std::exception& ex) {
     LOG_ERROR << ex.what();
+    return 1;
+  }
+
+  const auto listen_check = karing::listen_probe::check_available(listen_address, listen_port);
+  if (!listen_check.ok) {
+    std::cerr << listen_check.error << '\n';
+    LOG_ERROR << listen_check.error;
     return 1;
   }
 
@@ -180,8 +190,7 @@ int bootstrap::execute() {
     }
   }
 
-  if (options.base_path.empty()) options.base_path = "/";
-  if (options.base_path.size() > 1 && options.base_path.back() == '/') options.base_path.pop_back();
+  options.base_path = karing::base_path::normalize(options.base_path);
 
   fs::path upload_path;
   if (!options.upload_path.empty()) {
@@ -252,17 +261,15 @@ int bootstrap::execute() {
       if (normalized.size() > 1 && normalized.back() == '/') normalized.pop_back();
       drogon::app().registerPreRoutingAdvice(
           [normalized](const drogon::HttpRequestPtr& req,
-                       drogon::AdviceCallback&&,
+                       drogon::AdviceCallback&& callback,
                        drogon::AdviceChainCallback&& next) {
             const auto& path = req->path();
-            if (!normalized.empty() &&
-                (path == normalized || (path.rfind(normalized, 0) == 0 &&
-                                        (path.size() == normalized.size() || path[normalized.size()] == '/')))) {
-              std::string rewritten = path.substr(normalized.size());
-              if (rewritten.empty()) rewritten = "/";
-              req->setPath(std::move(rewritten));
+            if (karing::base_path::matches(normalized, path)) {
+              req->setPath(karing::base_path::strip(normalized, path));
+              next();
+              return;
             }
-            next();
+            callback(karing::http::error(drogon::k404NotFound, "E_NOT_FOUND", "Not found"));
           });
     }
   }

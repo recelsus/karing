@@ -1,35 +1,54 @@
 #include "utils/cli_output.h"
 
 #include <iostream>
+#include <optional>
+#include <string>
 
-#include "server/version.h"
+#include "karing_version.h"
 
 namespace karing::cli::utils {
 
-void print_help() {
+void print_help(const std::optional<std::string>& target) {
   std::cout
       << "karing " KARING_VERSION "\n"
+      << "Target: ";
+  if (target.has_value()) {
+    std::cout << *target << "\n";
+  } else {
+    std::cout << "not set\n";
+  }
+  std::cout
       << "Usage:\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] <id>\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] --id <id>\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] add [text]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] add -f <path> [--mime <type>] [--name <filename>]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> [text]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] del [id]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] swap <id1> <id2>\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] resequence\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] find [query] [--limit|-l <n>] [--type|-t text|file]\n"
-      << "                                  [--sort|-s id|store|update] [--asc] [--desc] [--full]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] health\n"
+      << "  karing\n"
+      << "  karing get [id]\n"
+      << "\n"
+      << "  karing add <text>\n"
+      << "  karing add -f <path> [--mime <type>] [--name <filename>]\n"
+      << "\n"
+      << "  karing mod <id> <text>\n"
+      << "  karing mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
+      << "\n"
+      << "  karing del\n"
+      << "  karing del <id>\n"
+      << "\n"
+      << "  karing swap <id1> <id2>\n"
+      << "  karing move <id> <before-id>\n"
+      << "  karing resequence\n"
+      << "\n"
+      << "  karing find [query]\n"
+      << "              [--limit|-l <n>] [--type|-t text|file]\n"
+      << "              [--sort|-s id|store|update] [--asc|--desc]\n"
+      << "              [--full]\n"
+      << "\n"
+      << "  karing init-db <path> [--limit|-l <n>] [--force]\n"
+      << "\n"
       << "  karing --help\n"
       << "  karing --version\n"
       << "\n"
-      << "URL resolution:\n"
-      << "  --url > KARING_URL\n"
-      << "API key resolution:\n"
-      << "  --api-key > KARING_API_KEY\n";
+      << "Options:\n"
+      << "  --target <target>\n"
+      << "  --api-key <key>\n"
+      << "  --json\n";
 }
 
 void print_version() {
