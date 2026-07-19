@@ -59,7 +59,7 @@ target_link_libraries(karing_common
   PUBLIC karing_project_options
 )
 
-add_library(karing_file_storage STATIC
+add_library(karing_file_storage STATIC EXCLUDE_FROM_ALL
   sqlite/storage/file_storage.cpp
 )
 

@@ -24,7 +24,6 @@ class search_service {
   karing::domain::entry_operations make_operations() const;
 
   std::string db_path_;
-  std::string upload_path_;
   int max_limit_{0};
 };
 

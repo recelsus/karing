@@ -36,6 +36,9 @@ search_result make_search_error(search_error error, std::optional<std::string> d
 
 }  // namespace
 
+entry_operations::entry_operations(std::string db_path, int max_limit)
+    : entry_operations(std::move(db_path), "", max_limit) {}
+
 entry_operations::entry_operations(std::string db_path, std::string upload_path, int max_limit)
     : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)), max_limit_(max_limit) {}
 
@@ -55,19 +58,9 @@ std::optional<EntryRecord> entry_operations::record_by_id(int id) const {
   return dao.get_by_id(id);
 }
 
-bool entry_operations::file_blob_by_id(int id, file_blob& out) const {
-  auto dao = make_dao();
-  return dao.get_file_blob(id, out.mime, out.filename, out.data);
-}
-
 int entry_operations::create_text(const std::string& content) const {
   auto dao = make_dao();
   return dao.insert_text(content);
-}
-
-int entry_operations::create_file(const std::string& filename, const std::string& mime, const std::string& data) const {
-  auto dao = make_dao();
-  return dao.insert_file(filename, mime, data);
 }
 
 bool entry_operations::replace_text(int id, const std::string& content) const {
@@ -75,22 +68,9 @@ bool entry_operations::replace_text(int id, const std::string& content) const {
   return dao.update_text(id, content);
 }
 
-bool entry_operations::replace_file(int id, const std::string& filename, const std::string& mime, const std::string& data) const {
-  auto dao = make_dao();
-  return dao.update_file(id, filename, mime, data);
-}
-
 bool entry_operations::patch_text(int id, const std::optional<std::string>& content) const {
   auto dao = make_dao();
   return dao.patch_text(id, content);
-}
-
-bool entry_operations::patch_file(int id,
-                                  const std::optional<std::string>& filename,
-                                  const std::optional<std::string>& mime,
-                                  const std::optional<std::string>& data) const {
-  auto dao = make_dao();
-  return dao.patch_file(id, filename, mime, data);
 }
 
 bool entry_operations::delete_latest_recent(int max_age_seconds) const {

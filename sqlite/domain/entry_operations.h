@@ -48,6 +48,7 @@ struct search_result {
 
 class entry_operations {
  public:
+  entry_operations(std::string db_path, int max_limit = 100);
   entry_operations(std::string db_path, std::string upload_path, int max_limit = 100);
 
   std::optional<EntryRecord> latest_record() const;

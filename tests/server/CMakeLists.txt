@@ -4,7 +4,7 @@ add_executable(karing_server_tests
 )
 
 target_link_libraries(karing_server_tests
-  PRIVATE karing_project_options karing_server_support karing_sqlite Drogon::Drogon
+  PRIVATE karing_project_options karing_server_support karing_sqlite karing_sqlite_file Drogon::Drogon
 )
 
 add_test(NAME karing_server_tests COMMAND karing_server_tests)

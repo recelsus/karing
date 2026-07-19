@@ -1,6 +1,20 @@
 #include "services/root_service.h"
 
+#include "repository/entry_repository.h"
+#include "storage/file_storage.h"
+
 namespace karing::services {
+namespace {
+
+std::string file_path_by_id(const std::string& db_path, int id) {
+  karing::repository::entry_repository repo(db_path);
+  karing::dao::KaringRecord record{};
+  std::string file_path;
+  if (!repo.get_file_record(id, record, file_path)) return {};
+  return file_path;
+}
+
+}  // namespace
 
 root_service::root_service(std::string db_path, std::string upload_path)
     : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)) {}
@@ -30,7 +44,10 @@ int root_service::create_file(const std::string& filename, const std::string& mi
 }
 
 bool root_service::replace_text(int id, const std::string& content) const {
-  return make_operations().replace_text(id, content);
+  const std::string file_path = file_path_by_id(db_path_, id);
+  const bool replaced = make_operations().replace_text(id, content);
+  if (replaced) karing::storage::file_storage::remove_if_any(file_path);
+  return replaced;
 }
 
 bool root_service::replace_file(int id, const std::string& filename, const std::string& mime, const std::string& data) const {
@@ -49,11 +66,18 @@ bool root_service::patch_file(int id,
 }
 
 bool root_service::delete_latest_recent(int max_age_seconds) const {
-  return make_operations().delete_latest_recent(max_age_seconds);
+  const auto record = latest_record();
+  const std::string file_path = record.has_value() ? file_path_by_id(db_path_, record->id) : std::string();
+  const bool deleted = make_operations().delete_latest_recent(max_age_seconds);
+  if (deleted) karing::storage::file_storage::remove_if_any(file_path);
+  return deleted;
 }
 
 bool root_service::delete_by_id(int id) const {
-  return make_operations().delete_by_id(id);
+  const std::string file_path = file_path_by_id(db_path_, id);
+  const bool deleted = make_operations().delete_by_id(id);
+  if (deleted) karing::storage::file_storage::remove_if_any(file_path);
+  return deleted;
 }
 
 std::optional<std::pair<karing::dao::KaringRecord, karing::dao::KaringRecord>> root_service::swap(int id1, int id2) const {

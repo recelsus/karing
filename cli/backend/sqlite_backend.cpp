@@ -64,7 +64,7 @@ int print_init_error(const karing::domain::app_error& error, bool json_output) {
 }
 
 karing::domain::entry_operations make_operations(const sqlite_context& context) {
-  return karing::domain::entry_operations(context.db_path, "", kDefaultSqliteLimit);
+  return karing::domain::entry_operations(context.db_path, kDefaultSqliteLimit);
 }
 
 int ensure_schema(const sqlite_context& context) {

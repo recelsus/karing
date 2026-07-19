@@ -2,11 +2,11 @@
 
 namespace karing::services {
 
-search_service::search_service(std::string db_path, std::string upload_path, int max_limit)
-    : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)), max_limit_(max_limit) {}
+search_service::search_service(std::string db_path, std::string, int max_limit)
+    : db_path_(std::move(db_path)), max_limit_(max_limit) {}
 
 karing::domain::entry_operations search_service::make_operations() const {
-  return karing::domain::entry_operations(db_path_, upload_path_, max_limit_);
+  return karing::domain::entry_operations(db_path_, max_limit_);
 }
 
 search_result search_service::search(const search_request& request) const {

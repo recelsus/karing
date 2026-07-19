@@ -33,11 +33,6 @@ bool file_storage::write(const std::string& data, std::string& out_path) const {
   return ofs.good();
 }
 
-bool file_storage::write_for_slot(int id, const std::string& data, std::string& out_path) const {
-  (void)id;
-  return write(data, out_path);
-}
-
 bool file_storage::read(const std::string& path, std::string& out_data) {
   std::ifstream ifs(path, std::ios::binary);
   if (!ifs.is_open()) return false;

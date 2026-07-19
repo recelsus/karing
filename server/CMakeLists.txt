@@ -32,7 +32,7 @@ add_library(karing_server OBJECT
 )
 
 target_link_libraries(karing_server
-  PUBLIC karing_project_options karing_server_support karing_sqlite
+  PUBLIC karing_project_options karing_server_support karing_sqlite karing_sqlite_file
   PRIVATE Drogon::Drogon
 )
 
@@ -42,7 +42,7 @@ add_executable(karing-server
 )
 
 target_link_libraries(karing-server
-  PRIVATE karing_project_options karing_server_support karing_sqlite Drogon::Drogon
+  PRIVATE karing_project_options karing_server_support karing_sqlite karing_sqlite_file Drogon::Drogon
 )
 
 install(TARGETS karing-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

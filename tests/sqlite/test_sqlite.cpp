@@ -183,7 +183,10 @@ void test_dao_manages_file_lifecycle() {
 
   const bool deleted = dao.logical_delete(1);
   expect(deleted, "logical_delete should succeed");
-  expect(!fs::exists(second_path), "file should be removed after delete");
+  expect(query_int(db.handle, "SELECT used FROM entries WHERE id=1;") == 0,
+         "logical_delete should clear the DB slot");
+  expect(query_text(db.handle, "SELECT file_path FROM entries WHERE id=1;").empty(),
+         "logical_delete should clear file metadata from the DB slot");
 }
 
 void test_text_file_upload_is_text_record_with_blob() {
@@ -394,6 +397,31 @@ void test_move_entry_rolls_back_when_rebuild_fails() {
          "next_id should remain unchanged after rollback");
 }
 
+void test_move_entry_rolls_back_on_unique_constraint() {
+  const auto env = make_temp_env("move-constraint");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("a") == 1, "slot 1 insert");
+  expect(dao.insert_text("b") == 2, "slot 2 insert");
+  expect(dao.insert_text("c") == 3, "slot 3 insert");
+
+  sqlite_db db(env.db_path);
+  exec_sql(db.handle, "CREATE UNIQUE INDEX entries_content_unique_test ON entries(content_text) WHERE used=1;");
+
+  const auto moved = dao.move_entry_before(3, 1);
+  expect(!moved.has_value(), "move should fail on unique constraint violation");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=1;") == "a",
+         "slot 1 should remain unchanged after constraint rollback");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=2;") == "b",
+         "slot 2 should remain unchanged after constraint rollback");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=3;") == "c",
+         "slot 3 should remain unchanged after constraint rollback");
+  expect(query_int(db.handle, "SELECT next_id FROM store_state WHERE singleton_id=1;") == 4,
+         "next_id should remain unchanged after constraint rollback");
+}
+
 void test_resequence_entries_compacts_ids_from_one() {
   const auto env = make_temp_env("resequence");
   const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
@@ -473,6 +501,7 @@ int main() {
       {"move_entry_inserts_before_target_slot", test_move_entry_inserts_before_target_slot},
       {"move_entry_preserves_file_blob_mapping", test_move_entry_preserves_file_blob_mapping},
       {"move_entry_rolls_back_when_rebuild_fails", test_move_entry_rolls_back_when_rebuild_fails},
+      {"move_entry_rolls_back_on_unique_constraint", test_move_entry_rolls_back_on_unique_constraint},
       {"resequence_entries_compacts_ids_from_one", test_resequence_entries_compacts_ids_from_one},
       {"resequence_full_store_resets_next_id_to_one", test_resequence_full_store_resets_next_id_to_one},
   };

@@ -27,6 +27,7 @@
 #include "db/db_init.h"
 #include "db/sqlite_connection.h"
 #include "common/error/app_error.h"
+#include "services/root_service.h"
 #include "utils/base_path.h"
 #include "utils/json_response.h"
 #include "utils/listen_probe.h"
@@ -487,6 +488,44 @@ void test_upload_mime_support() {
   expect(karing::upload_mime::normalise("application/octet-stream", "index.ts") == "text/plain", "ts should infer text/plain");
 }
 
+void test_root_service_delete_removes_file_body() {
+  const auto env = make_temp_env("delete-file");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+
+  karing::services::root_service service(env.db_path.string(), env.upload_path.string());
+  const int id = service.create_file("delete.txt", "text/plain", "delete-body");
+  expect(id == 1, "file insert should succeed");
+
+  const auto file_count = [&]() {
+    return static_cast<int>(std::distance(fs::directory_iterator(env.upload_path), fs::directory_iterator{}));
+  };
+  expect(file_count() == 1, "file body should exist before delete");
+
+  expect(service.delete_by_id(id), "delete_by_id should succeed");
+  expect(file_count() == 0, "root_service should remove file body after delete");
+  expect(!service.record_by_id(id).has_value(), "deleted slot should be cleared");
+}
+
+void test_root_service_replace_text_removes_file_body() {
+  const auto env = make_temp_env("replace-file-text");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+
+  karing::services::root_service service(env.db_path.string(), env.upload_path.string());
+  const int id = service.create_file("replace.txt", "text/plain", "replace-body");
+  expect(id == 1, "file insert should succeed");
+
+  const auto file_count = [&]() {
+    return static_cast<int>(std::distance(fs::directory_iterator(env.upload_path), fs::directory_iterator{}));
+  };
+  expect(file_count() == 1, "file body should exist before replace");
+
+  expect(service.replace_text(id, "plain text"), "replace_text should succeed");
+  expect(file_count() == 0, "root_service should remove file body after text replace");
+  const auto record = service.record_by_id(id);
+  expect(record.has_value(), "replaced text record should exist");
+  expect(!record->is_file && record->content == "plain text", "slot should become a text record");
+}
+
 void test_root_file_and_text_file_responses() {
   const auto env = make_temp_env("files");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -568,6 +607,8 @@ int main() {
       {"root_swap", test_root_swap},
       {"root_move", test_root_move},
       {"root_resequence", test_root_resequence},
+      {"root_service_delete_removes_file_body", test_root_service_delete_removes_file_body},
+      {"root_service_replace_text_removes_file_body", test_root_service_replace_text_removes_file_body},
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},
       {"health_response", test_health_response},

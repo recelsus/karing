@@ -16,11 +16,21 @@ add_library(karing_sqlite STATIC
 )
 
 target_link_libraries(karing_sqlite
-  PUBLIC karing_project_options karing_common karing_file_storage
+  PUBLIC karing_project_options karing_common
   PUBLIC sqlite3
 )
 
 target_include_directories(karing_sqlite
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_library(karing_sqlite_file STATIC EXCLUDE_FROM_ALL
+  dao/karing_dao_file.cpp
+  domain/entry_operations_file.cpp
+  store/entry_store_file.cpp
+)
+
+target_link_libraries(karing_sqlite_file
+  PUBLIC karing_sqlite karing_file_storage
 )
