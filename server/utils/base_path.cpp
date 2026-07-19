@@ -29,4 +29,19 @@ std::string normalize(const std::string& raw) {
   return value.empty() ? "/" : value;
 }
 
+bool matches(const std::string& normalized_base, const std::string& path) {
+  if (normalized_base.empty() || normalized_base == "/") return true;
+  if (path == normalized_base) return true;
+  return path.rfind(normalized_base, 0) == 0 &&
+         path.size() > normalized_base.size() &&
+         path[normalized_base.size()] == '/';
+}
+
+std::string strip(const std::string& normalized_base, const std::string& path) {
+  if (normalized_base.empty() || normalized_base == "/") return path.empty() ? "/" : path;
+  if (!matches(normalized_base, path)) return path;
+  std::string rewritten = path.substr(normalized_base.size());
+  return rewritten.empty() ? "/" : rewritten;
+}
+
 }  // namespace karing::base_path

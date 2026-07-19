@@ -36,46 +36,6 @@ search_result make_search_error(search_error error, std::optional<std::string> d
 
 }  // namespace
 
-operation_capabilities server_capabilities() {
-  return {};
-}
-
-operation_capabilities sqlite_cli_capabilities() {
-  operation_capabilities capabilities;
-  capabilities.can_create_file = false;
-  capabilities.can_read_file_blob = false;
-  capabilities.can_update_file = false;
-  return capabilities;
-}
-
-bool is_operation_supported(operation_capabilities capabilities, operation op) {
-  switch (op) {
-    case operation::create_text:
-      return capabilities.can_create_text;
-    case operation::create_file:
-      return capabilities.can_create_file;
-    case operation::read_record:
-      return capabilities.can_read_record;
-    case operation::read_file_blob:
-      return capabilities.can_read_file_blob;
-    case operation::update_text:
-      return capabilities.can_update_text;
-    case operation::update_file:
-      return capabilities.can_update_file;
-    case operation::delete_record:
-      return capabilities.can_delete_record;
-    case operation::search:
-      return capabilities.can_search;
-    case operation::swap:
-      return capabilities.can_swap;
-    case operation::move:
-      return capabilities.can_move;
-    case operation::resequence:
-      return capabilities.can_resequence;
-  }
-  return false;
-}
-
 entry_operations::entry_operations(std::string db_path, std::string upload_path, int max_limit)
     : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)), max_limit_(max_limit) {}
 

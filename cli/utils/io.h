@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 #include "http/http_client.h"
 
 namespace karing::cli::utils {

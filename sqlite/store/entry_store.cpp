@@ -133,7 +133,7 @@ int entry_store::insert_file(const std::string& filename, const std::string& mim
   dao::detail::read_entry_file_path(db, slot_id, old_file_path);
 
   std::string new_file_path;
-  if (!storage.write_for_slot(slot_id, data, new_file_path)) return -1;
+  if (!storage.write(data, new_file_path)) return -1;
 
   if (!dao::detail::exec_simple(db, "BEGIN IMMEDIATE;")) {
     storage::file_storage::remove_if_any(new_file_path);
@@ -218,7 +218,7 @@ bool entry_store::update_file(int id, const std::string& filename, const std::st
   if (!dao::detail::load_entry(db, id, current, &old_file_path)) return false;
 
   std::string new_file_path;
-  if (!storage.write_for_slot(id, data, new_file_path)) return false;
+  if (!storage.write(data, new_file_path)) return false;
   if (!dao::detail::exec_simple(db, "BEGIN IMMEDIATE;")) {
     storage::file_storage::remove_if_any(new_file_path);
     return false;

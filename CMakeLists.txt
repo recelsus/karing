@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(karing LANGUAGES CXX)
+project(karing VERSION 0.2.0 LANGUAGES CXX)
 
 # Export compile_commands.json for LSP/clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -38,14 +38,38 @@ if(KARING_BUILD_SERVER OR KARING_BUILD_CLI)
     ${GENERATED_INCLUDE_DIR}/schema_sql.h
     @ONLY
   )
+  configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/karing_version.h.in
+    ${GENERATED_INCLUDE_DIR}/karing_version.h
+    @ONLY
+  )
 endif()
 
 add_library(karing_project_options INTERFACE)
 target_include_directories(karing_project_options INTERFACE
   ${CMAKE_SOURCE_DIR}
-  ${CMAKE_SOURCE_DIR}/server
-  ${CMAKE_SOURCE_DIR}/sqlite
   ${GENERATED_INCLUDE_DIR}
+)
+
+add_library(karing_common STATIC
+  common/error/app_error.cpp
+)
+
+target_link_libraries(karing_common
+  PUBLIC karing_project_options
+)
+
+add_library(karing_file_storage STATIC
+  sqlite/storage/file_storage.cpp
+)
+
+target_link_libraries(karing_file_storage
+  PUBLIC karing_project_options
+)
+
+target_include_directories(karing_file_storage
+  PUBLIC
+    ${CMAKE_SOURCE_DIR}/sqlite
 )
 
 include(GNUInstallDirs)

@@ -16,7 +16,7 @@
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
 #include "db/db_introspection.h"
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 #include "utils/arg_utils.h"
 #include "utils/mime.h"
 

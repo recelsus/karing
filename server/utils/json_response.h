@@ -3,7 +3,7 @@
 #include <json/json.h>
 #include <string>
 
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 
 namespace karing::http {
 

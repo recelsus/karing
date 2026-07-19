@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-#include "server/version.h"
+#include "karing_version.h"
 
 namespace karing::cli::utils {
 

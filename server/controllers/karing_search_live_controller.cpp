@@ -4,7 +4,7 @@
 
 #include <drogon/drogon.h>
 
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 #include "http/record_json.h"
 #include "services/search_service.h"
 #include "utils/json_response.h"

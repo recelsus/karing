@@ -5,8 +5,6 @@ add_library(karing_sqlite STATIC
   db/db_resize.cpp
   db/db_init.cpp
   db/db_introspection.cpp
-  storage/file_storage.cpp
-  domain/app_error.cpp
   domain/search_query.cpp
   domain/entry_operations.cpp
   store/entry_store.cpp
@@ -18,6 +16,11 @@ add_library(karing_sqlite STATIC
 )
 
 target_link_libraries(karing_sqlite
-  PUBLIC karing_project_options
-  PRIVATE sqlite3
+  PUBLIC karing_project_options karing_common karing_file_storage
+  PUBLIC sqlite3
+)
+
+target_include_directories(karing_sqlite
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )

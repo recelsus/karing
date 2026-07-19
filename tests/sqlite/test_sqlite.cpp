@@ -15,7 +15,7 @@
 #include "db/db_init.h"
 #include "db/db_introspection.h"
 #include "db/sqlite_connection.h"
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 #include "domain/entry_operations.h"
 
 namespace fs = std::filesystem;
@@ -210,7 +210,7 @@ void test_text_file_upload_is_text_record_with_blob() {
   expect(data == "hello text file", "blob content should match");
 }
 
-void test_domain_operations_search_and_capabilities() {
+void test_domain_operations_search() {
   const auto env = make_temp_env("domain");
   const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
   expect(init.ok, "schema init should succeed");
@@ -230,15 +230,7 @@ void test_domain_operations_search_and_capabilities() {
   expect(search.error == karing::domain::search_error::none, "domain search should succeed");
   expect(search.records.size() == 2, "domain search should return text-like records");
 
-  const auto sqlite_capabilities = karing::domain::sqlite_cli_capabilities();
-  expect(!karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::create_file),
-         "sqlite cli backend should not support file creation");
-  expect(!karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::update_file),
-         "sqlite cli backend should not support file update");
-  expect(karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::search),
-         "sqlite cli backend should support search");
-  expect(karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::read_record),
-         "sqlite cli backend should support record reads");
+  expect(search.records.size() == 2, "domain search should keep matching text-like records");
 }
 
 void test_force_shrink_reassigns_ids_and_removes_old_files() {
@@ -341,6 +333,67 @@ void test_move_entry_inserts_before_target_slot() {
   expect(dao.get_by_id(5)->content == "d", "slot 5 should become d");
 }
 
+void test_move_entry_preserves_file_blob_mapping() {
+  const auto env = make_temp_env("move-file");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("a") == 1, "slot 1 insert");
+  expect(dao.insert_text("b") == 2, "slot 2 insert");
+  expect(dao.insert_file("e.txt", "text/plain", "file-e") == 3, "slot 3 file insert");
+
+  sqlite_db db(env.db_path);
+  const auto file_path_before = query_text(db.handle, "SELECT file_path FROM entries WHERE id=3;");
+  expect(!file_path_before.empty(), "file path should exist before move");
+  expect(fs::path(file_path_before).filename().string().rfind("entry_3_", 0) != 0,
+         "file storage path should not be derived from the source slot id");
+
+  const auto moved = dao.move_entry_before(3, 2);
+  expect(moved.has_value(), "move should succeed");
+
+  const auto moved_file = dao.get_by_id(2);
+  expect(moved_file.has_value(), "moved file record should be readable");
+  expect(moved_file->filename == "e.txt", "moved file record should keep filename");
+  expect(query_text(db.handle, "SELECT file_path FROM entries WHERE id=2;") == file_path_before,
+         "moved file record should keep stored file path");
+
+  std::string mime;
+  std::string filename;
+  std::string data;
+  expect(dao.get_file_blob(2, mime, filename, data), "moved file blob should remain readable");
+  expect(filename == "e.txt", "moved file blob filename should match");
+  expect(data == "file-e", "moved file blob content should match");
+  expect(dao.get_by_id(3)->content == "b", "record between move range should shift right");
+}
+
+void test_move_entry_rolls_back_when_rebuild_fails() {
+  const auto env = make_temp_env("move-rollback");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("a") == 1, "slot 1 insert");
+  expect(dao.insert_text("b") == 2, "slot 2 insert");
+  expect(dao.insert_text("c") == 3, "slot 3 insert");
+
+  sqlite_db db(env.db_path);
+  expect(query_int(db.handle, "SELECT next_id FROM store_state WHERE singleton_id=1;") == 4,
+         "next_id should be 4 before failed move");
+  exec_sql(db.handle, "DROP TABLE entries_fts;");
+
+  const auto moved = dao.move_entry_before(3, 1);
+  expect(!moved.has_value(), "move should fail when FTS rebuild cannot run");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=1;") == "a",
+         "slot 1 should remain unchanged after rollback");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=2;") == "b",
+         "slot 2 should remain unchanged after rollback");
+  expect(query_text(db.handle, "SELECT content_text FROM entries WHERE id=3;") == "c",
+         "slot 3 should remain unchanged after rollback");
+  expect(query_int(db.handle, "SELECT next_id FROM store_state WHERE singleton_id=1;") == 4,
+         "next_id should remain unchanged after rollback");
+}
+
 void test_resequence_entries_compacts_ids_from_one() {
   const auto env = make_temp_env("resequence");
   const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
@@ -353,6 +406,8 @@ void test_resequence_entries_compacts_ids_from_one() {
   expect(dao.insert_text("slot-four") == 4, "slot 4 insert");
 
   sqlite_db db(env.db_path);
+  const auto file_path_before = query_text(db.handle, "SELECT file_path FROM entries WHERE id=3;");
+  expect(!file_path_before.empty(), "file path should exist before resequence");
   exec_sql(db.handle,
            "UPDATE entries SET stored_at=30, updated_at=30 WHERE id=1;"
            "UPDATE entries SET used=0, source_kind=NULL, media_kind=NULL, content_text=NULL, file_path=NULL, "
@@ -369,6 +424,8 @@ void test_resequence_entries_compacts_ids_from_one() {
   const auto first = dao.get_by_id(1);
   expect(first.has_value(), "first resequenced slot should exist");
   expect(first->filename == "slot-three.txt", "oldest active entry should move to id 1");
+  expect(query_text(db.handle, "SELECT file_path FROM entries WHERE id=1;") == file_path_before,
+         "resequence should keep stored file path with moved file record");
   std::string mime;
   std::string filename;
   std::string data;
@@ -410,10 +467,12 @@ int main() {
       {"concurrent_writer_waits_for_short_transaction", test_concurrent_writer_waits_for_short_transaction},
       {"dao_manages_file_lifecycle", test_dao_manages_file_lifecycle},
       {"text_file_upload_is_text_record_with_blob", test_text_file_upload_is_text_record_with_blob},
-      {"domain_operations_search_and_capabilities", test_domain_operations_search_and_capabilities},
+      {"domain_operations_search", test_domain_operations_search},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
       {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},
       {"move_entry_inserts_before_target_slot", test_move_entry_inserts_before_target_slot},
+      {"move_entry_preserves_file_blob_mapping", test_move_entry_preserves_file_blob_mapping},
+      {"move_entry_rolls_back_when_rebuild_fails", test_move_entry_rolls_back_when_rebuild_fails},
       {"resequence_entries_compacts_ids_from_one", test_resequence_entries_compacts_ids_from_one},
       {"resequence_full_store_resets_next_id_to_one", test_resequence_full_store_resets_next_id_to_one},
   };

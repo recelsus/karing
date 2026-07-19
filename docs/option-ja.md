@@ -44,6 +44,7 @@
   - `KARING_MAX_FILE` と `KARING_MAX_TEXT`はMBとして扱う(例: KARING_MAX_TEXT=1 (= 1MB))
 - base path: `KARING_BASE_PATH`
 - `KARING_BASE_PATH` を設定すると、エンドポイントは `<base_path>` 配下で利用できます。
+- `KARING_BASE_PATH` が `/` 以外の場合、`<base_path>` 外の request は `404` を返します。
 - `KARING_BASE_PATH` は `/karing` のような path、または `https://example.test/karing` のような URL 全体を指定できます。内部では path 部分だけを使います。
 - error detail: `KARING_ERROR_DETAIL=1`
   - 構造化 error response に内部詳細を含めます

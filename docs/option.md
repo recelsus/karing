@@ -45,6 +45,7 @@ Server settings are provided only through CLI options and environment variables.
   - example: `KARING_MAX_TEXT=1` means `1MB`
 - base path: `KARING_BASE_PATH`
 - if `KARING_BASE_PATH` is set, endpoints are available under `<base_path>`
+- when `KARING_BASE_PATH` is not `/`, requests outside `<base_path>` return `404`
 - `KARING_BASE_PATH` accepts either a path such as `/karing` or a full URL such as `https://example.test/karing`; only the path part is used
 - error detail: `KARING_ERROR_DETAIL=1`
   - includes internal details in structured error responses

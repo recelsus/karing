@@ -13,10 +13,11 @@
 #include "db/db_path.h"
 #include "init/cli_output.h"
 #include "utils/base_path.h"
+#include "utils/json_response.h"
 #include "utils/listen_probe.h"
 #include "utils/options.h"
 #include "utils/limits.h"
-#include "version.h"
+#include "karing_version.h"
 
 namespace karing::app {
 
@@ -260,17 +261,15 @@ int bootstrap::execute() {
       if (normalized.size() > 1 && normalized.back() == '/') normalized.pop_back();
       drogon::app().registerPreRoutingAdvice(
           [normalized](const drogon::HttpRequestPtr& req,
-                       drogon::AdviceCallback&&,
+                       drogon::AdviceCallback&& callback,
                        drogon::AdviceChainCallback&& next) {
             const auto& path = req->path();
-            if (!normalized.empty() &&
-                (path == normalized || (path.rfind(normalized, 0) == 0 &&
-                                        (path.size() == normalized.size() || path[normalized.size()] == '/')))) {
-              std::string rewritten = path.substr(normalized.size());
-              if (rewritten.empty()) rewritten = "/";
-              req->setPath(std::move(rewritten));
+            if (karing::base_path::matches(normalized, path)) {
+              req->setPath(karing::base_path::strip(normalized, path));
+              next();
+              return;
             }
-            next();
+            callback(karing::http::error(drogon::k404NotFound, "E_NOT_FOUND", "Not found"));
           });
     }
   }

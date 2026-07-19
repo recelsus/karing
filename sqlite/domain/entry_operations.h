@@ -11,39 +11,6 @@ namespace karing::domain {
 
 using EntryRecord = karing::dao::KaringRecord;
 
-enum class operation {
-  create_text,
-  create_file,
-  read_record,
-  read_file_blob,
-  update_text,
-  update_file,
-  delete_record,
-  search,
-  swap,
-  move,
-  resequence,
-};
-
-struct operation_capabilities {
-  bool can_create_text{true};
-  bool can_create_file{true};
-  bool can_read_record{true};
-  bool can_read_file_blob{true};
-  bool can_update_text{true};
-  bool can_update_file{true};
-  bool can_delete_record{true};
-  bool can_search{true};
-  bool can_swap{true};
-  bool can_move{true};
-  bool can_resequence{true};
-  bool can_read_file_metadata{true};
-};
-
-operation_capabilities server_capabilities();
-operation_capabilities sqlite_cli_capabilities();
-bool is_operation_supported(operation_capabilities capabilities, operation op);
-
 struct file_blob {
   std::string mime;
   std::string filename;

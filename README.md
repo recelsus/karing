@@ -157,6 +157,7 @@ SQLite targets support text add/get/find/mod/delete, `swap`, `move`, `resequence
   - returns service state and DB information as JSON
 
 - when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/move`, `<base_path>/resequence`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
+- when `base_path` is not `/`, requests outside `<base_path>` return `404`
 - `base_path` can be a path such as `/karing` or a full URL such as `https://example.test/karing`; only the path part is used
 
 For request and response examples, see `docs/requests.md`.

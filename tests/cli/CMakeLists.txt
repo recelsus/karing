@@ -8,7 +8,7 @@ target_include_directories(karing_cli_tests
 )
 
 target_link_libraries(karing_cli_tests
-  PRIVATE karing_project_options karing_cli_core
+  PRIVATE karing_project_options karing_cli_core karing_sqlite
 )
 
 add_test(NAME karing_cli_tests COMMAND karing_cli_tests)

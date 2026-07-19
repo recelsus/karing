@@ -26,7 +26,7 @@
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
 #include "db/sqlite_connection.h"
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 #include "utils/base_path.h"
 #include "utils/json_response.h"
 #include "utils/listen_probe.h"
@@ -175,6 +175,16 @@ void test_base_path_normalization() {
          "full URL should drop query and fragment");
   expect(karing::base_path::normalize("https://example.test") == "/",
          "origin-only URL should normalize to root");
+
+  expect(karing::base_path::matches("/", "/find"), "root base path should match any path");
+  expect(karing::base_path::matches("/api", "/api"), "base path should match exact path");
+  expect(karing::base_path::matches("/api", "/api/"), "base path should match trailing slash");
+  expect(karing::base_path::matches("/api", "/api/find"), "base path should match nested path");
+  expect(!karing::base_path::matches("/api", "/find"), "base path should reject root API path");
+  expect(!karing::base_path::matches("/api", "/api2"), "base path should reject prefix collision");
+  expect(!karing::base_path::matches("/api", "/apis"), "base path should reject plural prefix collision");
+  expect(karing::base_path::strip("/api", "/api") == "/", "exact base path should strip to root");
+  expect(karing::base_path::strip("/api", "/api/find") == "/find", "nested base path should strip prefix");
 }
 
 void test_listen_probe_rejects_used_port() {

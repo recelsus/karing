@@ -4,7 +4,7 @@
 
 #include <sqlite3.h>
 
-#include "domain/app_error.h"
+#include "common/error/app_error.h"
 
 namespace karing::db {
 

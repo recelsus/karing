@@ -156,6 +156,7 @@ SQLite target では text add/get/find/mod/delete、`swap`、`move`、`resequenc
   - サービス状態と DB 情報を JSON で返却
 
 - base_path指定時は `<base_path>/`、`<base_path>/swap`、`<base_path>/move`、`<base_path>/resequence`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
+- `base_path` が `/` 以外の場合、`<base_path>` 外の request は `404` を返します。
 - `base_path` は `/karing` のような path または `https://example.test/karing` のような URL 全体で指定できます。内部では path 部分だけを使います。
 
 リクエスト例とレスポンス例は `docs/requests-ja.md` を参照してください。
