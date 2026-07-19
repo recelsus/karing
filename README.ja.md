@@ -187,4 +187,9 @@ local SQLite database の lock が busy timeout を超えて残る場合、plain
 
 ## License
 
-MIT License.
+Karing is licensed under the MIT License. See `LICENSE`.
+
+## Third-Party Notices
+
+Third-party dependency and tooling notices are listed in
+`THIRD_PARTY_NOTICES.md`.

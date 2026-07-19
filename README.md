@@ -188,4 +188,9 @@ For request and response examples, see `docs/requests.md`.
 
 ## License
 
-MIT License.
+Karing is licensed under the MIT License. See `LICENSE`.
+
+## Third-Party Notices
+
+Third-party dependency and tooling notices are listed in
+`THIRD_PARTY_NOTICES.md`.
