@@ -6,6 +6,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <sqlite3.h>
@@ -13,6 +14,7 @@
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
 #include "db/db_introspection.h"
+#include "db/sqlite_connection.h"
 
 namespace fs = std::filesystem;
 
@@ -104,6 +106,40 @@ void test_init_schema_creates_expected_layout() {
 
   const auto check = karing::db::inspect::check_schema(env.db_path.string());
   expect(check.ok, "schema check should pass after init");
+}
+
+void test_sqlite_connection_uses_wal_and_busy_timeout() {
+  const auto env = make_temp_env("connection");
+  const auto result = karing::db::init_sqlite_schema_file(env.db_path.string(), 4, false);
+  expect(result.ok, "schema init should succeed");
+
+  karing::db::sqlite_connection db(env.db_path.string(), karing::db::sqlite_access::read_write);
+  expect(db.ok(), "sqlite connection should open");
+  expect(query_text(db.get(), "PRAGMA journal_mode;") == "wal", "journal_mode should be wal");
+  expect(query_int(db.get(), "PRAGMA busy_timeout;") == karing::db::kSqliteBusyTimeoutMs,
+         "busy_timeout should use project default");
+}
+
+void test_concurrent_writer_waits_for_short_transaction() {
+  const auto env = make_temp_env("concurrent-writer");
+  const auto result = karing::db::init_sqlite_schema_file(env.db_path.string(), 4, false);
+  expect(result.ok, "schema init should succeed");
+
+  karing::db::sqlite_connection lock(env.db_path.string(), karing::db::sqlite_access::read_write);
+  expect(lock.ok(), "lock connection should open");
+  exec_sql(lock.get(), "BEGIN IMMEDIATE;");
+
+  int inserted_id = -1;
+  std::thread writer([&]() {
+    karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+    inserted_id = dao.insert_text("waited for lock");
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  exec_sql(lock.get(), "COMMIT;");
+  writer.join();
+
+  expect(inserted_id == 1, "writer should wait for lock and insert slot 1");
 }
 
 void test_dao_manages_file_lifecycle() {
@@ -294,6 +330,8 @@ void test_resequence_full_store_resets_next_id_to_one() {
 int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"init_schema_creates_expected_layout", test_init_schema_creates_expected_layout},
+      {"sqlite_connection_uses_wal_and_busy_timeout", test_sqlite_connection_uses_wal_and_busy_timeout},
+      {"concurrent_writer_waits_for_short_transaction", test_concurrent_writer_waits_for_short_transaction},
       {"dao_manages_file_lifecycle", test_dao_manages_file_lifecycle},
       {"text_file_upload_is_text_record_with_blob", test_text_file_upload_is_text_record_with_blob},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},

@@ -63,6 +63,7 @@ bool entry_store::logical_delete(int id) const {
   std::string file_path;
   dao::KaringRecord dummy{};
   if (!dao::detail::load_entry(db, id, dummy, &file_path, false)) return false;
+  if (!dao::detail::exec_simple(db, "BEGIN IMMEDIATE;")) return false;
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -70,12 +71,19 @@ bool entry_store::logical_delete(int id) const {
       "used=0, source_kind=NULL, media_kind=NULL, content_text=NULL, file_path=NULL, "
       "original_filename=NULL, mime_type=NULL, size_bytes=0, stored_at=NULL, updated_at=NULL "
       "WHERE id=?;";
-  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    dao::detail::exec_simple(db, "ROLLBACK;");
+    return false;
+  }
   sqlite3_bind_int(stmt, 1, id);
   const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db) > 0;
   sqlite3_finalize(stmt);
-  if (ok) storage::file_storage::remove_if_any(file_path);
-  return ok;
+  if (!ok || !dao::detail::exec_simple(db, "COMMIT;")) {
+    dao::detail::exec_simple(db, "ROLLBACK;");
+    return false;
+  }
+  storage::file_storage::remove_if_any(file_path);
+  return true;
 }
 
 bool entry_store::logical_delete_latest_recent(int max_age_seconds) const {
@@ -172,6 +180,7 @@ bool entry_store::update_text(int id, const std::string& content) const {
   std::string old_file_path;
   dao::KaringRecord current{};
   if (!dao::detail::load_entry(db, id, current, &old_file_path)) return false;
+  if (!dao::detail::exec_simple(db, "BEGIN IMMEDIATE;")) return false;
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -179,15 +188,22 @@ bool entry_store::update_text(int id, const std::string& content) const {
       "used=1, source_kind='direct_text', media_kind='text', content_text=?, file_path=NULL, "
       "original_filename=NULL, mime_type='text/plain; charset=utf-8', size_bytes=?, updated_at=? "
       "WHERE id=?;";
-  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    dao::detail::exec_simple(db, "ROLLBACK;");
+    return false;
+  }
   sqlite3_bind_text(stmt, 1, content.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(content.size()));
   sqlite3_bind_int64(stmt, 3, dao::detail::now_epoch());
   sqlite3_bind_int(stmt, 4, id);
   const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db) > 0;
   sqlite3_finalize(stmt);
-  if (ok) storage::file_storage::remove_if_any(old_file_path);
-  return ok;
+  if (!ok || !dao::detail::exec_simple(db, "COMMIT;")) {
+    dao::detail::exec_simple(db, "ROLLBACK;");
+    return false;
+  }
+  storage::file_storage::remove_if_any(old_file_path);
+  return true;
 }
 
 bool entry_store::update_file(int id, const std::string& filename, const std::string& mime, const std::string& data) const {
@@ -201,6 +217,10 @@ bool entry_store::update_file(int id, const std::string& filename, const std::st
 
   std::string new_file_path;
   if (!storage.write_for_slot(id, data, new_file_path)) return false;
+  if (!dao::detail::exec_simple(db, "BEGIN IMMEDIATE;")) {
+    storage::file_storage::remove_if_any(new_file_path);
+    return false;
+  }
 
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
@@ -209,6 +229,7 @@ bool entry_store::update_file(int id, const std::string& filename, const std::st
       "original_filename=?, mime_type=?, size_bytes=?, updated_at=? "
       "WHERE id=?;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    dao::detail::exec_simple(db, "ROLLBACK;");
     storage::file_storage::remove_if_any(new_file_path);
     return false;
   }
@@ -222,7 +243,8 @@ bool entry_store::update_file(int id, const std::string& filename, const std::st
   sqlite3_bind_int(stmt, 7, id);
   const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db) > 0;
   sqlite3_finalize(stmt);
-  if (!ok) {
+  if (!ok || !dao::detail::exec_simple(db, "COMMIT;")) {
+    dao::detail::exec_simple(db, "ROLLBACK;");
     storage::file_storage::remove_if_any(new_file_path);
     return false;
   }

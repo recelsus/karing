@@ -7,11 +7,13 @@
 
 #include <sqlite3.h>
 
+#include "db/sqlite_connection.h"
 #include "karing_dao.h"
 
 namespace karing::dao::detail {
 
 struct Db {
+  karing::db::sqlite_connection connection;
   sqlite3* handle{nullptr};
   explicit Db(const std::string& path);
   ~Db();

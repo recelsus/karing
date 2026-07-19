@@ -1,21 +1,22 @@
 // SQLite schema init and resize using raw C API.
 #include "db_init_internal.h"
 
+#include "db/sqlite_connection.h"
+
 namespace karing::db {
 
 init_result init_sqlite_schema_file(const std::string& db_path_str, int max_items, bool force) {
   init_result result;
   result.current_max_items = max_items;
 
-  sqlite3* db = nullptr;
-  if (sqlite3_open_v2(db_path_str.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) {
-    result.error = db ? sqlite3_errmsg(db) : "sqlite open failed";
-    if (db) sqlite3_close(db);
+  sqlite_connection connection(db_path_str, sqlite_access::read_write_create);
+  if (!connection.ok()) {
+    result.error = connection.error().message.empty() ? "sqlite open failed" : connection.error().message;
     return result;
   }
+  sqlite3* db = connection.get();
 
   const auto finish = [&](bool ok) {
-    if (db) sqlite3_close(db);
     result.ok = ok;
     return result;
   };
@@ -34,10 +35,7 @@ init_result init_sqlite_schema_file(const std::string& db_path_str, int max_item
     return finish(false);
   }
 
-  if (!detail::exec_stmt(db, "PRAGMA journal_mode = DELETE;", error) ||
-      !detail::exec_stmt(db, "PRAGMA synchronous = NORMAL;", error) ||
-      !detail::exec_stmt(db, "PRAGMA foreign_keys = ON;", error) ||
-      !detail::exec_stmt(db, "BEGIN IMMEDIATE;", error)) {
+  if (!detail::exec_stmt(db, "BEGIN IMMEDIATE;", error)) {
     result.error = error;
     detail::exec_stmt(db, "ROLLBACK;", error);
     return finish(false);

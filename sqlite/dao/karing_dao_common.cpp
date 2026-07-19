@@ -10,12 +10,11 @@ KaringDao::KaringDao(std::string db_path, std::string upload_path)
 namespace detail {
 
 Db::Db(const std::string& path) {
-  sqlite3_open_v2(path.c_str(), &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+  connection.open(path, karing::db::sqlite_access::read_write_create);
+  handle = connection.get();
 }
 
-Db::~Db() {
-  if (handle) sqlite3_close(handle);
-}
+Db::~Db() = default;
 
 Db::operator sqlite3*() {
   return handle;

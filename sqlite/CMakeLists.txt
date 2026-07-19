@@ -1,4 +1,5 @@
 add_library(karing_sqlite STATIC
+  db/sqlite_connection.cpp
   db/db_path.cpp
   db/db_init_common.cpp
   db/db_resize.cpp
