@@ -112,16 +112,31 @@ std::optional<int> previous_slot_id(sqlite3* db) {
   return next_id == 1 ? max_items : next_id - 1;
 }
 
-bool advance_next_id(sqlite3* db, int max_items) {
+bool choose_insert_slot(sqlite3* db, int fallback_id, int& id) {
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "SELECT id FROM entries WHERE used=0 ORDER BY id ASC LIMIT 1;", -1, &stmt, nullptr) != SQLITE_OK) {
+    return false;
+  }
+  id = fallback_id;
+  if (sqlite3_step(stmt) == SQLITE_ROW) id = sqlite3_column_int(stmt, 0);
+  sqlite3_finalize(stmt);
+  return true;
+}
+
+bool advance_next_id(sqlite3* db, int current_id) {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
-                         "UPDATE store_state SET next_id = CASE WHEN next_id >= max_items THEN 1 ELSE next_id + 1 END, "
+                         "UPDATE store_state SET "
+                         "next_id=COALESCE((SELECT id FROM entries WHERE used=0 ORDER BY id ASC LIMIT 1), "
+                         "CASE WHEN ? >= max_items THEN 1 ELSE ? + 1 END), "
                          "updated_at = strftime('%s','now') WHERE singleton_id=1;",
                          -1,
                          &stmt,
                          nullptr) != SQLITE_OK) {
     return false;
   }
+  sqlite3_bind_int(stmt, 1, current_id);
+  sqlite3_bind_int(stmt, 2, current_id);
   const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
   sqlite3_finalize(stmt);
   return ok;

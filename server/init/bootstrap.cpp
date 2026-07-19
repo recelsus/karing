@@ -13,6 +13,7 @@
 #include "db/db_path.h"
 #include "init/cli_output.h"
 #include "utils/base_path.h"
+#include "utils/listen_probe.h"
 #include "utils/options.h"
 #include "utils/limits.h"
 #include "version.h"
@@ -152,6 +153,13 @@ int bootstrap::execute() {
     max_text_bytes = clamp_size(max_text_mb, karing::limits::kMaxTextMb, "max-text");
   } catch (const std::exception& ex) {
     LOG_ERROR << ex.what();
+    return 1;
+  }
+
+  const auto listen_check = karing::listen_probe::check_available(listen_address, listen_port);
+  if (!listen_check.ok) {
+    std::cerr << listen_check.error << '\n';
+    LOG_ERROR << listen_check.error;
     return 1;
   }
 

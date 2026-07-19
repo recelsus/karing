@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -7,6 +8,9 @@
 #include <string>
 #include <vector>
 
+#include <sqlite3.h>
+
+#include "app.h"
 #include "backend/target.h"
 #include "backend/sqlite_backend.h"
 #include "dao/karing_dao.h"
@@ -26,6 +30,16 @@ struct test_failure : std::runtime_error {
 
 void expect(bool condition, const std::string& message) {
   if (!condition) throw test_failure(message);
+}
+
+void exec_sql(sqlite3* db, const std::string& sql) {
+  char* errmsg = nullptr;
+  const int rc = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &errmsg);
+  if (rc != SQLITE_OK) {
+    const std::string message = errmsg ? errmsg : "sqlite exec failed";
+    if (errmsg) sqlite3_free(errmsg);
+    throw test_failure(message);
+  }
 }
 
 fs::path make_temp_root(const std::string& name) {
@@ -103,12 +117,12 @@ void test_sqlite_backend_text_workflow() {
          "sqlite backend should search text");
   expect(karing::cli::backend::run_sqlite_mod(context, {"1", "alpha", "changed"}) == 0,
          "sqlite backend should update text");
+  expect(karing::cli::backend::run_sqlite_move(context, {"2", "1"}) == 0,
+         "sqlite backend should move a record before another record");
   expect(karing::cli::backend::run_sqlite_swap(context, {"1", "2"}) == 0,
          "sqlite backend should swap records");
   expect(karing::cli::backend::run_sqlite_resequence(context) == 0,
          "sqlite backend should resequence records");
-  expect(karing::cli::backend::run_sqlite_health(context) == 0,
-         "sqlite backend should report health");
   expect(karing::cli::backend::run_sqlite_add(context, {"-f", "README.md"}) != 0,
          "sqlite backend should reject file upload");
 
@@ -117,12 +131,57 @@ void test_sqlite_backend_text_workflow() {
   const auto second = dao.get_by_id(2);
   expect(first.has_value(), "first record should exist");
   expect(second.has_value(), "second record should exist");
-  expect(first->content == "beta note", "swap and resequence should preserve first content");
-  expect(second->content == "alpha changed", "update should persist through swap and resequence");
+  expect(first->content == "alpha changed", "move, swap, and resequence should preserve first content");
+  expect(second->content == "beta note", "move, update, and resequence should preserve second content");
 
   expect(karing::cli::backend::run_sqlite_delete(context, {"1"}) == 0,
          "sqlite backend should delete text record");
   expect(!dao.get_by_id(1).has_value(), "deleted record should no longer be active");
+}
+
+void test_sqlite_add_reuses_recently_deleted_slot() {
+  const auto root = make_temp_root("slot-reuse");
+  const auto db_path = root / "karing.sqlite";
+  const auto init = karing::db::init_sqlite_schema_file(db_path.string(), 3, false);
+  expect(init.ok, "schema init should succeed");
+
+  const karing::cli::backend::sqlite_context context{
+      .db_path = db_path.string(),
+      .json_output = false,
+  };
+  expect(karing::cli::backend::run_sqlite_add(context, {"first"}) == 0, "first add should succeed");
+  expect(karing::cli::backend::run_sqlite_add(context, {"second"}) == 0, "second add should succeed");
+  expect(karing::cli::backend::run_sqlite_delete(context, {}) == 0, "recent latest delete should succeed");
+  expect(karing::cli::backend::run_sqlite_add(context, {"replacement"}) == 0, "add after delete should succeed");
+
+  karing::dao::KaringDao dao(db_path.string(), (root / "uploads").string());
+  const auto reused = dao.get_by_id(2);
+  expect(reused.has_value(), "deleted slot should be reused");
+  expect(reused->content == "replacement", "reused slot should contain new content");
+}
+
+void test_sqlite_delete_without_id_rejects_expired_latest() {
+  const auto root = make_temp_root("expired-delete");
+  const auto db_path = root / "karing.sqlite";
+  const auto init = karing::db::init_sqlite_schema_file(db_path.string(), 3, false);
+  expect(init.ok, "schema init should succeed");
+
+  const karing::cli::backend::sqlite_context context{
+      .db_path = db_path.string(),
+      .json_output = false,
+  };
+  expect(karing::cli::backend::run_sqlite_add(context, {"expired"}) == 0, "add should succeed");
+
+  sqlite3* db = nullptr;
+  expect(sqlite3_open_v2(db_path.string().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) == SQLITE_OK,
+         "sqlite db should open");
+  exec_sql(db, "UPDATE entries SET stored_at=strftime('%s','now') - 601 WHERE id=1;");
+  sqlite3_close(db);
+
+  expect(karing::cli::backend::run_sqlite_delete(context, {}) != 0,
+         "delete without id should reject expired latest record");
+  karing::dao::KaringDao dao(db_path.string(), (root / "uploads").string());
+  expect(dao.get_by_id(1).has_value(), "expired latest record should remain active");
 }
 
 void test_sqlite_init_database_requires_explicit_path_and_protects_existing_file() {
@@ -159,10 +218,80 @@ void test_common_cli_error_codes_are_stable() {
   const karing::cli::backend::sqlite_context context{
       .db_path = db_path.string(),
       .json_output = true,
-      .show_error_details = true,
   };
   expect(karing::cli::backend::run_sqlite_add(context, {"-f", "README.md"}) != 0,
          "sqlite backend JSON mode should reject file upload through common error path");
+}
+
+void test_cli_routes_explicit_commands_without_implicit_add() {
+  const auto root = make_temp_root("cli-routing");
+  const auto db_path = root / "routing.sqlite";
+  const auto init = karing::db::init_sqlite_schema_file(db_path.string(), 3, false);
+  expect(init.ok, "routing db should initialize");
+
+  {
+    setenv("KARING_TARGET", db_path.string().c_str(), 1);
+    char arg0[] = "karing";
+    char arg1[] = "add";
+    char arg2[] = "routed";
+    char* argv[] = {arg0, arg1, arg2};
+    expect(karing::cli::run(3, argv) == 0, "explicit add command should add text");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "--target";
+    std::string target = db_path.string();
+    char arg3[] = "get";
+    char arg4[] = "1";
+    char* argv[] = {arg0, arg1, target.data(), arg3, arg4};
+    expect(karing::cli::run(5, argv) == 0, "explicit get command should fetch text");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "--target";
+    std::string target = db_path.string();
+    char arg3[] = "40";
+    char* argv[] = {arg0, arg1, target.data(), arg3};
+    expect(karing::cli::run(4, argv) != 0, "numeric shorthand should not add text when record is missing");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "--target";
+    std::string target = db_path.string();
+    char arg3[] = "1001";
+    char* argv[] = {arg0, arg1, target.data(), arg3};
+    expect(karing::cli::run(4, argv) != 0, "out-of-range numeric shorthand should be not found");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "--target";
+    std::string target = db_path.string();
+    char arg3[] = "anything";
+    char* argv[] = {arg0, arg1, target.data(), arg3};
+    expect(karing::cli::run(4, argv) != 0, "unknown positional string should print help instead of adding");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "del";
+    char* argv[] = {arg0, arg1};
+    expect(karing::cli::run(2, argv) == 0, "del without id should delete recent latest record");
+  }
+
+  karing::dao::KaringDao dao(db_path.string(), (root / "uploads").string());
+  expect(!dao.get_by_id(1).has_value(), "recent delete should remove the created record");
+  expect(!dao.get_by_id(2).has_value(), "unknown positional string should not create a second record");
+  unsetenv("KARING_TARGET");
+
+  {
+    char arg0[] = "karing";
+    char* argv[] = {arg0};
+    expect(karing::cli::run(1, argv) != 0, "missing target should fail when env and --target are absent");
+  }
 }
 
 }  // namespace
@@ -173,8 +302,11 @@ int main() {
       {"target_parsing", test_target_parsing},
       {"mime_guessing", test_mime_guessing},
       {"sqlite_backend_text_workflow", test_sqlite_backend_text_workflow},
+      {"sqlite_add_reuses_recently_deleted_slot", test_sqlite_add_reuses_recently_deleted_slot},
+      {"sqlite_delete_without_id_rejects_expired_latest", test_sqlite_delete_without_id_rejects_expired_latest},
       {"sqlite_init_database_requires_explicit_path_and_protects_existing_file", test_sqlite_init_database_requires_explicit_path_and_protects_existing_file},
       {"common_cli_error_codes_are_stable", test_common_cli_error_codes_are_stable},
+      {"cli_routes_explicit_commands_without_implicit_add", test_cli_routes_explicit_commands_without_implicit_add},
   };
 
   int failed = 0;

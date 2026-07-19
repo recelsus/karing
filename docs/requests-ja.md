@@ -7,6 +7,8 @@
 - RAW 応答: `GET /` などでは `text/plain` または file body をそのまま返す
 - `DELETE` 成功時は `204 No Content`
 
+Error `message` は利用者向けです。内部詳細は既定では省略され、server を `--error-detail` または `KARING_ERROR_DETAIL=1` で起動した場合のみ `details` に含まれます。
+
 ## GET /
 
 #### request:
@@ -185,6 +187,43 @@ Host: localhost:8080
   "meta": {
     "count": 2,
     "next_id": 3
+  }
+}
+```
+
+## POST /move?id=5&before=2
+
+`id` のレコードを `before` のレコードの直前へ移動し、間のレコードをずらします。
+例えば `5` を `2` の前へ移動すると、`a b c d e` は `a e b c d` になります。
+
+#### request:
+
+```http
+POST /move?id=5&before=2 HTTP/1.1
+Host: localhost:8080
+```
+
+#### response:
+
+```json
+{
+  "success": true,
+  "message": "OK",
+  "data": [
+    {
+      "id": 1,
+      "is_file": false,
+      "content": "a"
+    },
+    {
+      "id": 2,
+      "is_file": false,
+      "content": "e"
+    }
+  ],
+  "meta": {
+    "count": 5,
+    "next_id": 1
   }
 }
 ```

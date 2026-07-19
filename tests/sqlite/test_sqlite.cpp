@@ -317,6 +317,30 @@ void test_swap_entries_exchanges_slot_contents() {
   expect(data == "slot-two", "swapped blob content should match");
 }
 
+void test_move_entry_inserts_before_target_slot() {
+  const auto env = make_temp_env("move");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("a") == 1, "slot 1 insert");
+  expect(dao.insert_text("b") == 2, "slot 2 insert");
+  expect(dao.insert_text("c") == 3, "slot 3 insert");
+  expect(dao.insert_text("d") == 4, "slot 4 insert");
+  expect(dao.insert_text("e") == 5, "slot 5 insert");
+
+  const auto moved = dao.move_entry_before(5, 2);
+  expect(moved.has_value(), "move should succeed");
+  expect(moved->first.size() == 5, "move should keep all active records");
+  expect(moved->second == 1, "full store should keep next_id wrapped to 1");
+
+  expect(dao.get_by_id(1)->content == "a", "slot 1 should remain a");
+  expect(dao.get_by_id(2)->content == "e", "slot 2 should become e");
+  expect(dao.get_by_id(3)->content == "b", "slot 3 should become b");
+  expect(dao.get_by_id(4)->content == "c", "slot 4 should become c");
+  expect(dao.get_by_id(5)->content == "d", "slot 5 should become d");
+}
+
 void test_resequence_entries_compacts_ids_from_one() {
   const auto env = make_temp_env("resequence");
   const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
@@ -326,12 +350,13 @@ void test_resequence_entries_compacts_ids_from_one() {
   expect(dao.insert_text("slot-one") == 1, "slot 1 insert");
   expect(dao.insert_text("slot-two") == 2, "slot 2 insert");
   expect(dao.insert_file("slot-three.txt", "text/plain", "slot-three") == 3, "slot 3 insert");
-  expect(dao.logical_delete(2), "delete slot 2");
   expect(dao.insert_text("slot-four") == 4, "slot 4 insert");
 
   sqlite_db db(env.db_path);
   exec_sql(db.handle,
            "UPDATE entries SET stored_at=30, updated_at=30 WHERE id=1;"
+           "UPDATE entries SET used=0, source_kind=NULL, media_kind=NULL, content_text=NULL, file_path=NULL, "
+           "original_filename=NULL, mime_type=NULL, size_bytes=0, stored_at=NULL, updated_at=NULL WHERE id=2;"
            "UPDATE entries SET stored_at=20, updated_at=20 WHERE id=3;"
            "UPDATE entries SET stored_at=40, updated_at=40 WHERE id=4;"
            "UPDATE store_state SET next_id=5 WHERE singleton_id=1;");
@@ -388,6 +413,7 @@ int main() {
       {"domain_operations_search_and_capabilities", test_domain_operations_search_and_capabilities},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
       {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},
+      {"move_entry_inserts_before_target_slot", test_move_entry_inserts_before_target_slot},
       {"resequence_entries_compacts_ids_from_one", test_resequence_entries_compacts_ids_from_one},
       {"resequence_full_store_resets_next_id_to_one", test_resequence_full_store_resets_next_id_to_one},
   };

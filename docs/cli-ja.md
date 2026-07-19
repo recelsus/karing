@@ -1,24 +1,25 @@
 # CLI
 
-`karing` は target に対して操作する CLI です。
+`karing` は `KARING_TARGET`、または `--target` で指定した target に対して操作する CLI です。
 
-`http://` または `https://` で始まる target は HTTP backend を使います。
+`http://` または `https://` で始まる `--target` は HTTP backend を使います。
 それ以外の target はローカル SQLite path として扱います。
 
 CLI を `KARING_CLI_ENABLE_HTTP_BACKEND=OFF` でビルドした場合、HTTP target は `E_BACKEND` を返し、SQLite target のみ利用できます。
 
 ## Target
 
-target は最初の位置引数です。
+target は `--target`、次に `KARING_TARGET` の順で解決します。
+どちらも未設定の場合、CLI はエラーで終了します。
 
 例:
 
 ```bash
-karing http://127.0.0.1:8080 health
-karing ./karing.sqlite find
+karing get 11
+karing --target ./karing.sqlite find
 ```
 
-`--url` と `KARING_URL` はサポートしません。
+`--url`、`KARING_URL`、`--id` はサポートしません。
 
 ## API Key
 
@@ -37,48 +38,50 @@ CLI は API key が与えられている場合:
 ## Global Option
 
 - `--api-key <key>`
+- `--target <target>`
 - `--json`
-- `--error-detail`
-- `--id <id>`
 - `--help`
 - `--version`
 
 ## Command
 
-- `karing <target>`
-  - 最新1件を取得
-- `karing <target> <id>`
+- `karing`
+  - 選択されたtargetから最新1件を取得
+- `karing get <id>`
   - 指定IDを取得
-- `karing --id <id> <target>`
-  - 指定IDを取得
-- `karing <target> add [text]`
+- `karing add <text>`
   - テキストを追加
-- `karing <target> add -f <path> [--mime <type>] [--name <filename>]`
+- `karing add -f <path> [--mime <type>] [--name <filename>]`
   - ファイルを追加
-- `karing <target> mod <id> [text]`
+- `karing mod <id> <text>`
   - 指定IDをテキストで上書き
-- `karing <target> mod <id> -f <path> [--mime <type>] [--name <filename>]`
+- `karing mod <id> -f <path> [--mime <type>] [--name <filename>]`
   - 指定IDをファイルで上書き
-- `karing <target> del [id]`
-  - 最新の削除または指定IDの削除
-- `karing <target> swap <id1> <id2>`
+- `karing del`
+  - 作成から10分以内の最新レコードのみ削除
+- `karing del <id>`
+  - 指定IDの削除
+- `karing swap <id1> <id2>`
   - 2つのIDの内容を入れ替え
-- `karing <target> resequence`
+- `karing move <id> <before-id>`
+  - 指定IDを別IDの直前に移動し、間のレコードをずらす
+- `karing resequence`
   - active レコードを `1..n` に詰め直す
-- `karing <target> find [query] [--limit|-l <n>] [--type|-t text|file] [--sort|-s id|store|update] [--asc] [--desc] [--full]`
+- `karing find [query] [--limit|-l <n>] [--type|-t text|file] [--sort|-s id|store|update] [--asc] [--desc] [--full]`
   - 一覧または検索
-- `karing <target> health`
-  - `/health` を表示
 - `karing init-db <path> [--limit|-l <n>] [--force]`
   - SQLite database を明示 path で作成または再初期化/resize
+
+`--target <target>` は `KARING_TARGET` を上書きします。
+`karing anything` のような未知の位置引数は text 追加せず help を表示します。
 
 ## Runtime Behaviour
 
 - `--json`
   - JSON 応答を表示
-- `--error-detail` または `KARING_ERROR_DETAIL=1`
-  - local CLI error に内部詳細を含める
-- `karing <id>`
+- `--target`
+  - `KARING_TARGET` を上書きする
+- `karing get <id>`
   - text はそのまま表示
   - non-text file は生バイナリを流さず、download 用の `curl` / `wget` 例を表示
 - `find`
@@ -91,10 +94,11 @@ SQLite target で対応する操作:
 
 - text add/get/find/mod/delete
 - `swap`
+- `move`
 - `resequence`
-- `health`
 - file metadata 表示
 - `init-db` による明示的な SQLite database 作成
+- 直近削除で空いた slot の次回 add での再利用
 
 SQLite target で対応しない操作:
 
@@ -109,18 +113,21 @@ SQLite target で file または text-file record を `--json` なしで取得�
 
 ```bash
 karing init-db ./karing.sqlite --limit 100
-karing http://127.0.0.1:8080
-karing http://127.0.0.1:8080 5
-karing http://127.0.0.1:8080 add "hello"
-echo "hello" | karing http://127.0.0.1:8080 add
-karing http://127.0.0.1:8080 add -f ./note.txt
-karing http://127.0.0.1:8080 mod 5 "updated"
-karing http://127.0.0.1:8080 del
-karing http://127.0.0.1:8080 swap 3 4
-karing http://127.0.0.1:8080 resequence
-karing http://127.0.0.1:8080 find test --limit 10 --sort id --desc
-karing http://127.0.0.1:8080 health
-karing ./karing.sqlite health
-karing ./karing.sqlite add "local note"
-karing ./karing.sqlite find local
+karing --target ./karing.sqlite add "local note"
+KARING_TARGET=./karing.sqlite karing
+KARING_TARGET=./karing.sqlite karing get 5
+KARING_TARGET=http://127.0.0.1:8080 karing
+KARING_TARGET=http://127.0.0.1:8080 karing get 5
+KARING_TARGET=http://127.0.0.1:8080 karing add "hello"
+echo "hello" | KARING_TARGET=http://127.0.0.1:8080 karing add
+KARING_TARGET=http://127.0.0.1:8080 karing add -f ./note.txt
+KARING_TARGET=http://127.0.0.1:8080 karing mod 5 "updated"
+KARING_TARGET=http://127.0.0.1:8080 karing del
+KARING_TARGET=http://127.0.0.1:8080 karing del 5
+KARING_TARGET=http://127.0.0.1:8080 karing swap 3 4
+KARING_TARGET=http://127.0.0.1:8080 karing move 5 2
+KARING_TARGET=http://127.0.0.1:8080 karing resequence
+KARING_TARGET=http://127.0.0.1:8080 karing find test --limit 10 --sort id --desc
+karing --target ./karing.sqlite add "local note"
+karing --target ./karing.sqlite find local
 ```

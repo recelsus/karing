@@ -60,6 +60,10 @@ std::optional<std::pair<karing::dao::KaringRecord, karing::dao::KaringRecord>> r
   return make_operations().swap(id1, id2);
 }
 
+std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> root_service::move_before(int id, int before_id) const {
+  return make_operations().move_before(id, before_id);
+}
+
 std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> root_service::resequence() const {
   return make_operations().resequence();
 }

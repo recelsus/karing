@@ -49,6 +49,11 @@ bool KaringDao::swap_entries(int id1, int id2) {
   return store.swap_entries(id1, id2);
 }
 
+std::optional<std::pair<std::vector<KaringRecord>, int>> KaringDao::move_entry_before(int id, int before_id) {
+  store::entry_store store(db_path_, upload_path_);
+  return store.move_entry_before(id, before_id);
+}
+
 std::optional<std::pair<std::vector<KaringRecord>, int>> KaringDao::resequence_entries() {
   store::entry_store store(db_path_, upload_path_);
   return store.resequence_entries();

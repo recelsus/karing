@@ -1,41 +1,54 @@
 #include "utils/cli_output.h"
 
 #include <iostream>
+#include <optional>
+#include <string>
 
 #include "server/version.h"
 
 namespace karing::cli::utils {
 
-void print_help() {
+void print_help(const std::optional<std::string>& target) {
   std::cout
       << "karing " KARING_VERSION "\n"
+      << "Target: ";
+  if (target.has_value()) {
+    std::cout << *target << "\n";
+  } else {
+    std::cout << "not set\n";
+  }
+  std::cout
       << "Usage:\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target>\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> <id>\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] --id <id> <target>\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> add [text]\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> add -f <path> [--mime <type>] [--name <filename>]\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> mod <id> [text]\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> del [id]\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> swap <id1> <id2>\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> resequence\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> find [query] [--limit|-l <n>] [--type|-t text|file]\n"
-      << "                                           [--sort|-s id|store|update] [--asc] [--desc] [--full]\n"
-      << "  karing [--api-key <key>] [--json] [--error-detail] <target> health\n"
-      << "  karing [--json] [--error-detail] init-db <path> [--limit|-l <n>] [--force]\n"
+      << "  karing\n"
+      << "  karing get [id]\n"
+      << "\n"
+      << "  karing add <text>\n"
+      << "  karing add -f <path> [--mime <type>] [--name <filename>]\n"
+      << "\n"
+      << "  karing mod <id> <text>\n"
+      << "  karing mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
+      << "\n"
+      << "  karing del\n"
+      << "  karing del <id>\n"
+      << "\n"
+      << "  karing swap <id1> <id2>\n"
+      << "  karing move <id> <before-id>\n"
+      << "  karing resequence\n"
+      << "\n"
+      << "  karing find [query]\n"
+      << "              [--limit|-l <n>] [--type|-t text|file]\n"
+      << "              [--sort|-s id|store|update] [--asc|--desc]\n"
+      << "              [--full]\n"
+      << "\n"
+      << "  karing init-db <path> [--limit|-l <n>] [--force]\n"
+      << "\n"
       << "  karing --help\n"
       << "  karing --version\n"
       << "\n"
-      << "Target:\n"
-#if KARING_CLI_ENABLE_HTTP_BACKEND
-      << "  http://... or https://...  HTTP backend\n"
-#endif
-      << "  any other value            SQLite backend path\n"
-      << "API key resolution:\n"
-      << "  --api-key > KARING_API_KEY\n"
-      << "Error detail:\n"
-      << "  --error-detail or KARING_ERROR_DETAIL=1\n";
+      << "Options:\n"
+      << "  --target <target>\n"
+      << "  --api-key <key>\n"
+      << "  --json\n";
 }
 
 void print_version() {

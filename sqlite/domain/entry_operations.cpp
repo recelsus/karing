@@ -68,6 +68,8 @@ bool is_operation_supported(operation_capabilities capabilities, operation op) {
       return capabilities.can_search;
     case operation::swap:
       return capabilities.can_swap;
+    case operation::move:
+      return capabilities.can_move;
     case operation::resequence:
       return capabilities.can_resequence;
   }
@@ -148,6 +150,11 @@ std::optional<std::pair<EntryRecord, EntryRecord>> entry_operations::swap(int id
   const auto second = dao.get_by_id(id2);
   if (!first || !second) return std::nullopt;
   return std::make_pair(*first, *second);
+}
+
+std::optional<std::pair<std::vector<EntryRecord>, int>> entry_operations::move_before(int id, int before_id) const {
+  auto dao = make_dao();
+  return dao.move_entry_before(id, before_id);
 }
 
 std::optional<std::pair<std::vector<EntryRecord>, int>> entry_operations::resequence() const {

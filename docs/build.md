@@ -35,6 +35,8 @@ brew install drogon curl jsoncpp sqlite3
 
 ## Build
 
+`CMAKE_EXPORT_COMPILE_COMMANDS` is enabled. `compile_commands.json` is generated under the configured build directory.
+
 both:
 
 ```bash
@@ -128,6 +130,7 @@ sudo cmake --install build --prefix /usr/local
 
 - when switching between `server only`, `CLI only`, and `both`, re-run configure against the same `build/` directory
 - when switching `KARING_CLI_ENABLE_HTTP_BACKEND`, re-run configure
+- LSPs should read `compile_commands.json` from the configured build directory
 - `Release` or `RelWithDebInfo` is recommended for production use
 - `-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON` may be used if desired
 - `-DCMAKE_INSTALL_DO_STRIP=ON` may be considered for distribution builds

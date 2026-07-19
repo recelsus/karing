@@ -10,6 +10,14 @@
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
 #include <json/json.h>
+#include <sqlite3.h>
+
+#if !defined(_WIN32)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include "controllers/health_controller.h"
 #include "controllers/karing_root_controller.h"
@@ -17,9 +25,11 @@
 #include "controllers/karing_search_live_controller.h"
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
+#include "db/sqlite_connection.h"
 #include "domain/app_error.h"
 #include "utils/base_path.h"
 #include "utils/json_response.h"
+#include "utils/listen_probe.h"
 #include "utils/upload_mime.h"
 #include "utils/limits.h"
 #include "utils/options.h"
@@ -167,6 +177,38 @@ void test_base_path_normalization() {
          "origin-only URL should normalize to root");
 }
 
+void test_listen_probe_rejects_used_port() {
+#if defined(_WIN32)
+  return;
+#else
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) return;
+
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  addr.sin_port = 0;
+  if (bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    close(fd);
+    throw test_failure("test listener socket should bind");
+  }
+
+  socklen_t len = sizeof(addr);
+  if (getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+    close(fd);
+    throw test_failure("test listener socket should report port");
+  }
+
+  const int port = ntohs(addr.sin_port);
+  const auto unavailable = karing::listen_probe::check_available("127.0.0.1", port);
+  close(fd);
+
+  expect(!unavailable.ok, "listen probe should reject an already bound port");
+  expect(unavailable.error.find("127.0.0.1:" + std::to_string(port)) != std::string::npos,
+         "listen probe error should include address and port");
+#endif
+}
+
 void test_root_json_crud_and_delete() {
   const auto env = make_temp_env("root");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 4, false).ok, "db init should succeed");
@@ -259,6 +301,44 @@ void test_root_swap() {
   expect(same_swap_resp->getStatusCode() == drogon::k400BadRequest, "POST /swap should reject same ids");
 }
 
+void test_root_move() {
+  const auto env = make_temp_env("move");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+  set_current_options(env);
+
+  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  expect(dao.insert_text("a") == 1, "insert slot 1");
+  expect(dao.insert_text("b") == 2, "insert slot 2");
+  expect(dao.insert_text("c") == 3, "insert slot 3");
+  expect(dao.insert_text("d") == 4, "insert slot 4");
+  expect(dao.insert_text("e") == 5, "insert slot 5");
+
+  auto move_req = drogon::HttpRequest::newHttpRequest();
+  move_req->setMethod(drogon::Post);
+  move_req->setParameter("id", "5");
+  move_req->setParameter("before", "2");
+  karing::controllers::karing_root_controller controller;
+  auto move_resp = invoke([&](auto&& cb) { controller.move_karing(move_req, std::move(cb)); });
+  expect(move_resp->getStatusCode() == drogon::k200OK, "POST /move should succeed");
+
+  auto json = response_json(move_resp);
+  expect(json["data"].isArray(), "move response should return an array");
+  expect(json["data"].size() == 5, "move response should return active records");
+  expect(json["meta"]["next_id"].asInt() == 1, "move should return next_id");
+  expect(dao.get_by_id(1)->content == "a", "slot 1 should remain a");
+  expect(dao.get_by_id(2)->content == "e", "slot 2 should become e");
+  expect(dao.get_by_id(3)->content == "b", "slot 3 should become b");
+  expect(dao.get_by_id(4)->content == "c", "slot 4 should become c");
+  expect(dao.get_by_id(5)->content == "d", "slot 5 should become d");
+
+  auto same_move_req = drogon::HttpRequest::newHttpRequest();
+  same_move_req->setMethod(drogon::Post);
+  same_move_req->setParameter("id", "2");
+  same_move_req->setParameter("before", "2");
+  auto same_move_resp = invoke([&](auto&& cb) { controller.move_karing(same_move_req, std::move(cb)); });
+  expect(same_move_resp->getStatusCode() == drogon::k400BadRequest, "POST /move should reject same ids");
+}
+
 void test_root_resequence() {
   const auto env = make_temp_env("resequence");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -268,8 +348,21 @@ void test_root_resequence() {
   expect(dao.insert_text("one") == 1, "insert slot 1");
   expect(dao.insert_text("two") == 2, "insert slot 2");
   expect(dao.insert_text("three") == 3, "insert slot 3");
-  expect(dao.logical_delete(2), "delete slot 2");
   expect(dao.insert_text("four") == 4, "insert slot 4");
+
+  {
+    karing::db::sqlite_connection db;
+    db.open(env.db_path.string(), karing::db::sqlite_access::read_write);
+    char* errmsg = nullptr;
+    sqlite3_exec(db.get(),
+                 "UPDATE entries SET used=0, source_kind=NULL, media_kind=NULL, content_text=NULL, file_path=NULL, "
+                 "original_filename=NULL, mime_type=NULL, size_bytes=0, stored_at=NULL, updated_at=NULL WHERE id=2;"
+                 "UPDATE store_state SET next_id=5 WHERE singleton_id=1;",
+                 nullptr,
+                 nullptr,
+                 &errmsg);
+    if (errmsg) sqlite3_free(errmsg);
+  }
 
   auto resequence_req = drogon::HttpRequest::newHttpRequest();
   resequence_req->setMethod(drogon::Post);
@@ -460,8 +553,10 @@ int main() {
       {"options_parse_modes", test_options_parse_modes},
       {"common_http_error_response_hides_and_shows_detail", test_common_http_error_response_hides_and_shows_detail},
       {"base_path_normalization", test_base_path_normalization},
+      {"listen_probe_rejects_used_port", test_listen_probe_rejects_used_port},
       {"root_json_crud_and_delete", test_root_json_crud_and_delete},
       {"root_swap", test_root_swap},
+      {"root_move", test_root_move},
       {"root_resequence", test_root_resequence},
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},

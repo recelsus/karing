@@ -68,8 +68,8 @@ if(KARING_CLI_ENABLE_HTTP_BACKEND)
     commands/delete_command.cpp
     commands/find_command.cpp
     commands/get_command.cpp
-    commands/health_command.cpp
     commands/mod_command.cpp
+    commands/move_command.cpp
     commands/resequence_command.cpp
     commands/swap_command.cpp
   )

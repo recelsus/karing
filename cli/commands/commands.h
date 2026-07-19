@@ -26,14 +26,15 @@ int run_get(const std::string& base_url,
             std::optional<int> id,
             bool json_output);
 
-int run_health(const std::string& base_url,
-               const std::optional<std::string>& api_key,
-               bool json_output);
-
 int run_mod(const std::string& base_url,
             const std::optional<std::string>& api_key,
             bool json_output,
             const std::vector<std::string>& args);
+
+int run_move(const std::string& base_url,
+             const std::optional<std::string>& api_key,
+             bool json_output,
+             const std::vector<std::string>& args);
 
 int run_swap(const std::string& base_url,
              const std::optional<std::string>& api_key,

@@ -21,6 +21,7 @@ enum class operation {
   delete_record,
   search,
   swap,
+  move,
   resequence,
 };
 
@@ -34,6 +35,7 @@ struct operation_capabilities {
   bool can_delete_record{true};
   bool can_search{true};
   bool can_swap{true};
+  bool can_move{true};
   bool can_resequence{true};
   bool can_read_file_metadata{true};
 };
@@ -101,6 +103,7 @@ class entry_operations {
   bool delete_by_id(int id) const;
 
   std::optional<std::pair<EntryRecord, EntryRecord>> swap(int id1, int id2) const;
+  std::optional<std::pair<std::vector<EntryRecord>, int>> move_before(int id, int before_id) const;
   std::optional<std::pair<std::vector<EntryRecord>, int>> resequence() const;
 
   search_result search(const search_request& request) const;

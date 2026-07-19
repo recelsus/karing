@@ -56,11 +56,11 @@ karing::domain::app_error database_error(std::string message, std::string detail
 }
 
 int print_error(const sqlite_context& context, const karing::domain::app_error& error) {
-  return karing::cli::utils::print_error(error, context.json_output, context.show_error_details);
+  return karing::cli::utils::print_error(error, context.json_output, false);
 }
 
-int print_init_error(const karing::domain::app_error& error, bool json_output, bool show_error_details) {
-  return karing::cli::utils::print_error(error, json_output, show_error_details);
+int print_init_error(const karing::domain::app_error& error, bool json_output) {
+  return karing::cli::utils::print_error(error, json_output, false);
 }
 
 karing::domain::entry_operations make_operations(const sqlite_context& context) {
@@ -242,6 +242,7 @@ int run_sqlite_delete(const sqlite_context& context, const std::vector<std::stri
   if (has_file_metadata(*record)) return print_error(context, backend_error("sqlite backend does not support deleting file records"));
 
   const bool ok = args.empty() ? operations.delete_latest_recent(600) : operations.delete_by_id(record->id);
+  if (!ok && args.empty()) return print_error(context, not_found_error("No recent latest record to delete"));
   if (!ok) return print_error(context, database_error("delete failed", "entry operation returned false"));
   if (context.json_output) print_json(id_json("OK", record->id));
   return 0;
@@ -326,32 +327,6 @@ int run_sqlite_find(const sqlite_context& context, const std::vector<std::string
   return 0;
 }
 
-int run_sqlite_health(const sqlite_context& context) {
-  if (const int status = ensure_schema(context); status != 0) return status;
-  const auto info = karing::db::inspect::read_health_info(context.db_path);
-  if (!info.has_value()) return print_error(context, database_error("failed to read sqlite health info", "read_health_info returned no value"));
-
-  if (context.json_output) {
-    Json::Value root(Json::objectValue);
-    root["status"] = "ok";
-    root["target"] = "sqlite";
-    root["db_path"] = context.db_path;
-    root["db"]["max_items"] = info->max_items;
-    root["db"]["next_id"] = info->next_id;
-    root["db"]["active_items"] = info->active_items;
-    print_json(root);
-    return 0;
-  }
-
-  std::cout << "status: ok\n";
-  std::cout << "target: sqlite\n";
-  std::cout << "db: " << context.db_path << '\n';
-  std::cout << "max_items: " << info->max_items << '\n';
-  std::cout << "next_id: " << info->next_id << '\n';
-  std::cout << "active_items: " << info->active_items << '\n';
-  return 0;
-}
-
 int run_sqlite_mod(const sqlite_context& context, const std::vector<std::string>& args) {
   if (const int status = ensure_schema(context); status != 0) return status;
   if (args.empty()) return print_error(context, validation_error("mod requires an id"));
@@ -405,6 +380,32 @@ int run_sqlite_swap(const sqlite_context& context, const std::vector<std::string
   return 0;
 }
 
+int run_sqlite_move(const sqlite_context& context, const std::vector<std::string>& args) {
+  if (const int status = ensure_schema(context); status != 0) return status;
+  if (args.size() != 2) return print_error(context, validation_error("move requires an id and a before-id"));
+  const auto id = parse_id(context, args[0], "move id");
+  const auto before_id = parse_id(context, args[1], "move before id");
+  if (!id.has_value() || !before_id.has_value()) return 1;
+  if (*id == *before_id) return print_error(context, validation_error("move ids must be different"));
+
+  const auto moved = make_operations(context).move_before(*id, *before_id);
+  if (!moved.has_value()) return print_error(context, not_found_error("Move failed"));
+
+  if (context.json_output) {
+    Json::Value data(Json::arrayValue);
+    for (const auto& record : moved->first) data.append(record_to_json(record));
+    Json::Value meta(Json::objectValue);
+    meta["count"] = static_cast<int>(moved->first.size());
+    meta["next_id"] = moved->second;
+    print_json(success_json(data, meta));
+  } else {
+    std::cout << "move complete\n";
+    std::cout << "count: " << moved->first.size() << '\n';
+    std::cout << "next_id: " << moved->second << '\n';
+  }
+  return 0;
+}
+
 int run_sqlite_resequence(const sqlite_context& context) {
   if (const int status = ensure_schema(context); status != 0) return status;
   const auto resequenced = make_operations(context).resequence();
@@ -425,7 +426,7 @@ int run_sqlite_resequence(const sqlite_context& context) {
   return 0;
 }
 
-int run_sqlite_init_database(const std::vector<std::string>& args, bool json_output, bool show_error_details) {
+int run_sqlite_init_database(const std::vector<std::string>& args, bool json_output) {
   std::optional<std::string> db_path;
   int limit = kDefaultSqliteLimit;
   bool force = false;
@@ -436,7 +437,7 @@ int run_sqlite_init_database(const std::vector<std::string>& args, bool json_out
       try {
         limit = std::stoi(args[++i]);
       } catch (...) {
-        return print_init_error(validation_error("limit must be an integer"), json_output, show_error_details);
+        return print_init_error(validation_error("limit must be an integer"), json_output);
       }
       continue;
     }
@@ -448,14 +449,14 @@ int run_sqlite_init_database(const std::vector<std::string>& args, bool json_out
       db_path = arg;
       continue;
     }
-    return print_init_error(validation_error("init-db accepts exactly one path"), json_output, show_error_details);
+    return print_init_error(validation_error("init-db accepts exactly one path"), json_output);
   }
 
   if (!db_path.has_value() || db_path->empty()) {
-    return print_init_error(validation_error("init-db requires a sqlite path"), json_output, show_error_details);
+    return print_init_error(validation_error("init-db requires a sqlite path"), json_output);
   }
   if (limit < 1 || limit > 1000) {
-    return print_init_error(validation_error("limit must be in range 1..1000"), json_output, show_error_details);
+    return print_init_error(validation_error("limit must be in range 1..1000"), json_output);
   }
 
   const fs::path path = fs::absolute(*db_path);
@@ -463,18 +464,17 @@ int run_sqlite_init_database(const std::vector<std::string>& args, bool json_out
     return print_init_error(karing::domain::make_error(karing::domain::error_category::conflict,
                                                        karing::domain::error_code::conflict,
                                                        "sqlite database already exists; use --force to reinitialize or resize"),
-                            json_output,
-                            show_error_details);
+                            json_output);
   }
 
   std::error_code ec;
   if (!path.parent_path().empty()) {
     fs::create_directories(path.parent_path(), ec);
-    if (ec) return print_init_error(database_error("failed to create parent directory", ec.message()), json_output, show_error_details);
+    if (ec) return print_init_error(database_error("failed to create parent directory", ec.message()), json_output);
   }
 
   const auto result = karing::db::init_sqlite_schema_file(path.string(), limit, force);
-  if (!result.ok) return print_init_error(database_error("sqlite init failed", result.error), json_output, show_error_details);
+  if (!result.ok) return print_init_error(database_error("sqlite init failed", result.error), json_output);
 
   if (json_output) {
     Json::Value root(Json::objectValue);

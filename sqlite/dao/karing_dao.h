@@ -78,6 +78,7 @@ class KaringDao {
 
   // Swap the full contents of two slots atomically.
   bool swap_entries(int id1, int id2);
+  std::optional<std::pair<std::vector<KaringRecord>, int>> move_entry_before(int id, int before_id);
   std::optional<std::pair<std::vector<KaringRecord>, int>> resequence_entries();
 
  private:

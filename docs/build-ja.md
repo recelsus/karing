@@ -35,6 +35,8 @@ brew install drogon curl jsoncpp sqlite3
 
 ## Build
 
+`CMAKE_EXPORT_COMPILE_COMMANDS` は有効です。`compile_commands.json` は configure した build directory 配下に生成されます。
+
 両方:
 
 ```bash
@@ -118,4 +120,5 @@ cmake --build build-cli-sqlite-only -j
 
 - `server only`、`CLI only`、`both` を切り替える場合は同じ `build/` directory に対して再 configure する
 - `KARING_CLI_ENABLE_HTTP_BACKEND` を切り替える場合も再 configure する
+- LSP は configure した build directory 配下の `compile_commands.json` を参照する
 - production では `Release` または `RelWithDebInfo` を推奨する

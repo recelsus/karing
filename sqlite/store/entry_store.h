@@ -29,6 +29,7 @@ class entry_store {
                   const std::optional<std::string>& data) const;
 
   bool swap_entries(int id1, int id2) const;
+  std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> move_entry_before(int id, int before_id) const;
   std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> resequence_entries() const;
 
  private:

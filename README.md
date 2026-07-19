@@ -43,6 +43,28 @@ Put simply, it is for storing notes and pulling them back out.
 - build
   - see `docs/build.md`
 
+## CLI
+
+`karing` operates against `KARING_TARGET`. Use `--target` to override it for a command.
+
+- `--target http://...` or `--target https://...`
+  - HTTP backend
+- `--target <path>`
+  - local SQLite backend path
+
+Examples:
+
+```bash
+karing init-db ./karing.sqlite --limit 100
+KARING_TARGET=http://127.0.0.1:8080 karing add "server note"
+KARING_TARGET=http://127.0.0.1:8080 karing find server
+karing --target ./karing.sqlite add "local note"
+```
+
+SQLite targets support text add/get/find/mod/delete, `swap`, `move`, `resequence`, and file metadata display. File upload, file replace, file record deletion, and file body reads are HTTP-backend operations only.
+
+`--url`, `KARING_URL`, and `--id` are not supported. Either `--target` or `KARING_TARGET` must be set.
+
 ## Run Options
 
 - server settings are provided only through CLI options and environment variables
@@ -60,10 +82,12 @@ Put simply, it is for storing notes and pulling them back out.
   - `KARING_LISTEN`, `KARING_PORT`
   - `KARING_DB_PATH`, `KARING_UPLOAD_PATH`, `KARING_LOG_PATH`
   - `KARING_LIMIT`, `KARING_MAX_FILE`, `KARING_MAX_TEXT`
+  - `KARING_BASE_PATH`, `KARING_ERROR_DETAIL`, `KARING_TARGET`
 
 - CLI options:
   - `--listen`, `--port`, `--db-path`, `--upload-path`
   - `--limit`, `--max-file`, `--max-text`
+  - `--error-detail`
   - `--max-file` and `--max-text` are specified in MB
 
 - details: see `docs/option.md`
@@ -96,6 +120,11 @@ Put simply, it is for storing notes and pulling them back out.
   - the IDs themselves do not change; only the slot contents are exchanged
   - the response returns the two swapped records as an array
 
+- `POST /move?id=<id>&before=<id>`
+  - move one ID before another ID, shifting the records between them
+  - for example, moving `5` before `2` changes `a b c d e` into `a e b c d`
+  - the response returns the active records and `next_id`
+
 - `POST /resequence`
   - compact active records into `1..n` using `stored_at asc, id asc`
   - move empty slots to the end
@@ -127,7 +156,7 @@ Put simply, it is for storing notes and pulling them back out.
 - `GET /health`
   - returns service state and DB information as JSON
 
-- when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/resequence`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
+- when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/move`, `<base_path>/resequence`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
 - `base_path` can be a path such as `/karing` or a full URL such as `https://example.test/karing`; only the path part is used
 
 For request and response examples, see `docs/requests.md`.
