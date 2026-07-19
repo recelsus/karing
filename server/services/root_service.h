@@ -5,14 +5,11 @@
 #include <utility>
 
 #include "dao/karing_dao.h"
+#include "domain/entry_operations.h"
 
 namespace karing::services {
 
-struct file_blob {
-  std::string mime;
-  std::string filename;
-  std::string data;
-};
+using file_blob = karing::domain::file_blob;
 
 class root_service {
  public:
@@ -41,7 +38,7 @@ class root_service {
   std::optional<std::pair<std::vector<karing::dao::KaringRecord>, int>> resequence() const;
 
  private:
-  karing::dao::KaringDao make_dao() const;
+  karing::domain::entry_operations make_operations() const;
 
   std::string db_path_;
   std::string upload_path_;

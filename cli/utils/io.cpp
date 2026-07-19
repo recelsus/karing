@@ -104,4 +104,25 @@ int print_error(const std::string& message) {
   return 1;
 }
 
+int print_error(const karing::domain::app_error& error, bool json_output, bool include_detail) {
+  if (!json_output) {
+    std::cerr << "ERROR: " << error.message << '\n';
+    if (include_detail && error.detail.has_value()) std::cerr << "DETAIL: " << *error.detail << '\n';
+    return 1;
+  }
+
+  Json::Value root(Json::objectValue);
+  root["success"] = false;
+  root["code"] = karing::domain::to_code_string(error.code);
+  root["message"] = error.message;
+  if (include_detail && error.detail.has_value()) {
+    root["details"] = Json::Value(Json::objectValue);
+    root["details"]["detail"] = *error.detail;
+  }
+  Json::StreamWriterBuilder writer;
+  writer["indentation"] = "";
+  std::cerr << Json::writeString(writer, root) << '\n';
+  return 1;
+}
+
 }

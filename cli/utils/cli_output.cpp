@@ -10,26 +10,32 @@ void print_help() {
   std::cout
       << "karing " KARING_VERSION "\n"
       << "Usage:\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] <id>\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] --id <id>\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] add [text]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] add -f <path> [--mime <type>] [--name <filename>]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> [text]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] del [id]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] swap <id1> <id2>\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] resequence\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] find [query] [--limit|-l <n>] [--type|-t text|file]\n"
-      << "                                  [--sort|-s id|store|update] [--asc] [--desc] [--full]\n"
-      << "  karing [--url <url>] [--api-key <key>] [--json] health\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target>\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> <id>\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] --id <id> <target>\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> add [text]\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> add -f <path> [--mime <type>] [--name <filename>]\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> mod <id> [text]\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> mod <id> -f <path> [--mime <type>] [--name <filename>]\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> del [id]\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> swap <id1> <id2>\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> resequence\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> find [query] [--limit|-l <n>] [--type|-t text|file]\n"
+      << "                                           [--sort|-s id|store|update] [--asc] [--desc] [--full]\n"
+      << "  karing [--api-key <key>] [--json] [--error-detail] <target> health\n"
+      << "  karing [--json] [--error-detail] init-db <path> [--limit|-l <n>] [--force]\n"
       << "  karing --help\n"
       << "  karing --version\n"
       << "\n"
-      << "URL resolution:\n"
-      << "  --url > KARING_URL\n"
+      << "Target:\n"
+#if KARING_CLI_ENABLE_HTTP_BACKEND
+      << "  http://... or https://...  HTTP backend\n"
+#endif
+      << "  any other value            SQLite backend path\n"
       << "API key resolution:\n"
-      << "  --api-key > KARING_API_KEY\n";
+      << "  --api-key > KARING_API_KEY\n"
+      << "Error detail:\n"
+      << "  --error-detail or KARING_ERROR_DETAIL=1\n";
 }
 
 void print_version() {

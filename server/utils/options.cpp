@@ -17,6 +17,12 @@ void parse_int(const char* raw, int& out) {
   }
 }
 
+void parse_bool(const char* raw, bool& out) {
+  if (!raw || !*raw) return;
+  const std::string value(raw);
+  out = value == "1" || value == "true" || value == "TRUE" || value == "yes" || value == "on";
+}
+
 }  // namespace
 
 server_options parse(int argc, char** argv) {
@@ -34,6 +40,7 @@ server_options parse(int argc, char** argv) {
 
   if (const char* env = std::getenv("KARING_UPLOAD_PATH"); env && *env) out.upload_path = env;
   if (const char* env = std::getenv("KARING_BASE_PATH"); env && *env) out.base_path = env;
+  parse_bool(std::getenv("KARING_ERROR_DETAIL"), out.show_error_details);
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -51,6 +58,10 @@ server_options parse(int argc, char** argv) {
     }
     if (arg == "--force") {
       out.force = true;
+      continue;
+    }
+    if (arg == "--error-detail") {
+      out.show_error_details = true;
       continue;
     }
     if (arg == "--listen" && i + 1 < argc) {

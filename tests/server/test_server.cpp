@@ -17,6 +17,9 @@
 #include "controllers/karing_search_live_controller.h"
 #include "dao/karing_dao.h"
 #include "db/db_init.h"
+#include "domain/app_error.h"
+#include "utils/base_path.h"
+#include "utils/json_response.h"
 #include "utils/upload_mime.h"
 #include "utils/limits.h"
 #include "utils/options.h"
@@ -90,6 +93,21 @@ drogon::HttpRequestPtr make_json_request(drogon::HttpMethod method, const Json::
 void test_options_parse_modes() {
   {
     char arg0[] = "karing";
+    char* argv[] = {arg0};
+    auto parsed = karing::options::parse(1, argv);
+    expect(parsed.listen_address == "127.0.0.1", "default listen address should be loopback");
+  }
+
+  {
+    char arg0[] = "karing";
+    char arg1[] = "--error-detail";
+    char* argv[] = {arg0, arg1};
+    auto parsed = karing::options::parse(2, argv);
+    expect(parsed.show_error_details, "--error-detail should enable detailed errors");
+  }
+
+  {
+    char arg0[] = "karing";
     char arg1[] = "--check-db";
     char* argv[] = {arg0, arg1};
     auto parsed = karing::options::parse(2, argv);
@@ -115,6 +133,38 @@ void test_options_parse_modes() {
     auto parsed = karing::options::parse(3, argv);
     expect(parsed.action_kind == karing::options::action::error, "conflicting db modes should be rejected");
   }
+}
+
+void test_common_http_error_response_hides_and_shows_detail() {
+  const auto error = karing::domain::make_error(karing::domain::error_category::database,
+                                                karing::domain::error_code::sqlite_io,
+                                                "Database unavailable",
+                                                "disk I/O detail");
+
+  const auto hidden = karing::http::error(drogon::k500InternalServerError, error, false);
+  const auto hidden_json = response_json(hidden);
+  expect(hidden_json["success"].asBool() == false, "common HTTP error should mark failure");
+  expect(hidden_json["code"].asString() == "E_SQLITE_IO", "common HTTP error should expose stable code");
+  expect(hidden_json["message"].asString() == "Database unavailable", "common HTTP error should expose user message");
+  expect(!hidden_json.isMember("details"), "common HTTP error should hide detail by default");
+
+  const auto shown = karing::http::error(drogon::k500InternalServerError, error, true);
+  const auto shown_json = response_json(shown);
+  expect(shown_json["details"]["detail"].asString() == "disk I/O detail",
+         "common HTTP error should include detail when enabled");
+}
+
+void test_base_path_normalization() {
+  expect(karing::base_path::normalize("") == "/", "empty base path should normalize to root");
+  expect(karing::base_path::normalize("/") == "/", "root base path should stay root");
+  expect(karing::base_path::normalize("karing") == "/karing", "path should gain leading slash");
+  expect(karing::base_path::normalize("/karing/") == "/karing", "path should lose trailing slash");
+  expect(karing::base_path::normalize("https://example.test/karing/") == "/karing",
+         "full URL should normalize to path");
+  expect(karing::base_path::normalize("https://example.test/karing/?x=1#top") == "/karing",
+         "full URL should drop query and fragment");
+  expect(karing::base_path::normalize("https://example.test") == "/",
+         "origin-only URL should normalize to root");
 }
 
 void test_root_json_crud_and_delete() {
@@ -408,6 +458,8 @@ void test_root_file_and_text_file_responses() {
 int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"options_parse_modes", test_options_parse_modes},
+      {"common_http_error_response_hides_and_shows_detail", test_common_http_error_response_hides_and_shows_detail},
+      {"base_path_normalization", test_base_path_normalization},
       {"root_json_crud_and_delete", test_root_json_crud_and_delete},
       {"root_swap", test_root_swap},
       {"root_resequence", test_root_resequence},

@@ -15,6 +15,8 @@
 #include "db/db_init.h"
 #include "db/db_introspection.h"
 #include "db/sqlite_connection.h"
+#include "domain/app_error.h"
+#include "domain/entry_operations.h"
 
 namespace fs = std::filesystem;
 
@@ -120,6 +122,23 @@ void test_sqlite_connection_uses_wal_and_busy_timeout() {
          "busy_timeout should use project default");
 }
 
+void test_sqlite_error_converts_to_common_error() {
+  karing::db::sqlite_error error;
+  error.kind = karing::db::sqlite_error_kind::busy;
+  error.code = SQLITE_BUSY;
+  error.extended_code = SQLITE_BUSY;
+  error.message = "database is locked";
+
+  const auto app_error = karing::db::to_app_error(error, "SQLite database is busy");
+  expect(app_error.category == karing::domain::error_category::unavailable,
+         "busy sqlite error should map to unavailable category");
+  expect(app_error.code == karing::domain::error_code::sqlite_busy,
+         "busy sqlite error should map to sqlite busy code");
+  expect(std::string(karing::domain::to_code_string(app_error.code)) == "E_SQLITE_BUSY",
+         "sqlite busy code should have stable string");
+  expect(app_error.detail.has_value(), "sqlite common error should preserve internal detail");
+}
+
 void test_concurrent_writer_waits_for_short_transaction() {
   const auto env = make_temp_env("concurrent-writer");
   const auto result = karing::db::init_sqlite_schema_file(env.db_path.string(), 4, false);
@@ -189,6 +208,37 @@ void test_text_file_upload_is_text_record_with_blob() {
   expect(filename == "note.txt", "blob filename should match");
   expect(mime == "text/plain", "blob mime should match");
   expect(data == "hello text file", "blob content should match");
+}
+
+void test_domain_operations_search_and_capabilities() {
+  const auto env = make_temp_env("domain");
+  const auto init = karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  karing::domain::entry_operations operations(env.db_path.string(), env.upload_path.string(), 5);
+  expect(operations.create_text("domain alpha") == 1, "domain operation should create text");
+  expect(operations.create_file("domain.txt", "text/plain", "domain file") == 2,
+         "domain operation should create text file");
+
+  const auto search = operations.search({
+      .q = "domain",
+      .limit = 5,
+      .type = "text",
+      .sort = "id",
+      .order = "asc",
+  });
+  expect(search.error == karing::domain::search_error::none, "domain search should succeed");
+  expect(search.records.size() == 2, "domain search should return text-like records");
+
+  const auto sqlite_capabilities = karing::domain::sqlite_cli_capabilities();
+  expect(!karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::create_file),
+         "sqlite cli backend should not support file creation");
+  expect(!karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::update_file),
+         "sqlite cli backend should not support file update");
+  expect(karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::search),
+         "sqlite cli backend should support search");
+  expect(karing::domain::is_operation_supported(sqlite_capabilities, karing::domain::operation::read_record),
+         "sqlite cli backend should support record reads");
 }
 
 void test_force_shrink_reassigns_ids_and_removes_old_files() {
@@ -331,9 +381,11 @@ int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"init_schema_creates_expected_layout", test_init_schema_creates_expected_layout},
       {"sqlite_connection_uses_wal_and_busy_timeout", test_sqlite_connection_uses_wal_and_busy_timeout},
+      {"sqlite_error_converts_to_common_error", test_sqlite_error_converts_to_common_error},
       {"concurrent_writer_waits_for_short_transaction", test_concurrent_writer_waits_for_short_transaction},
       {"dao_manages_file_lifecycle", test_dao_manages_file_lifecycle},
       {"text_file_upload_is_text_record_with_blob", test_text_file_upload_is_text_record_with_blob},
+      {"domain_operations_search_and_capabilities", test_domain_operations_search_and_capabilities},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
       {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},
       {"resequence_entries_compacts_ids_from_one", test_resequence_entries_compacts_ids_from_one},

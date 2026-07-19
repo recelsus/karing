@@ -4,7 +4,8 @@
 
 ## 既定値
 
-- listen: `0.0.0.0:8080`
+- listen: `127.0.0.1:8080`
+  - Docker image では `KARING_LISTEN=0.0.0.0` を明示設定します
 
 - DB path:
   - `--db-path` 指定時はその値
@@ -31,6 +32,7 @@
 - `--max-file <mb>`
 - `--limit <n>`
 - `--upload-path <path>`
+- `--error-detail`
 - `--check-db`
 - `--init-db`
 
@@ -42,11 +44,22 @@
   - `KARING_MAX_FILE` と `KARING_MAX_TEXT`はMBとして扱う(例: KARING_MAX_TEXT=1 (= 1MB))
 - base path: `KARING_BASE_PATH`
 - `KARING_BASE_PATH` を設定すると、エンドポイントは `<base_path>` 配下で利用できます。
+- `KARING_BASE_PATH` は `/karing` のような path、または `https://example.test/karing` のような URL 全体を指定できます。内部では path 部分だけを使います。
+- error detail: `KARING_ERROR_DETAIL=1`
+  - 構造化 error response に内部詳細を含めます
+
+## Network
+
+server の既定 listen は loopback です。公開利用ではリバースプロキシ配下に置く想定です。
+TLS 終端はリバースプロキシ側で行います。
 
 ## Command Sample
 
 ```bash
 ./karing --init-db --db-path /var/lib/karing/karing.sqlite --limit 100
 ./karing --listen 127.0.0.1 --port 8080 --db-path ./karing.sqlite --upload-path ./uploads
+KARING_LISTEN=0.0.0.0 ./karing --port 8080
 KARING_BASE_PATH=/karing KARING_PORT=8080 ./karing
+KARING_BASE_PATH=https://example.test/karing KARING_PORT=8080 ./karing
+KARING_ERROR_DETAIL=1 ./karing --port 8080
 ```

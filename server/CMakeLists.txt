@@ -1,7 +1,7 @@
 add_library(karing_core STATIC
+  utils/base_path.cpp
   utils/options.cpp
   utils/json_response.cpp
-  utils/search_query.cpp
   utils/upload_mime.cpp
 )
 

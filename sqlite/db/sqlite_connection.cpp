@@ -1,5 +1,6 @@
 #include "db/sqlite_connection.h"
 
+#include <string>
 #include <utility>
 
 namespace karing::db {
@@ -52,6 +53,48 @@ sqlite_error make_sqlite_error(sqlite3* db, sqlite_error_kind fallback_kind) {
   if (error.kind == sqlite_error_kind::unknown) error.kind = fallback_kind;
   error.message = db ? sqlite3_errmsg(db) : "sqlite error";
   return error;
+}
+
+karing::domain::app_error to_app_error(const sqlite_error& error, std::string message) {
+  using karing::domain::error_category;
+  using karing::domain::error_code;
+
+  error_code code = error_code::sqlite_unknown;
+  error_category category = error_category::database;
+
+  switch (error.kind) {
+    case sqlite_error_kind::none:
+      code = error_code::none;
+      category = error_category::none;
+      break;
+    case sqlite_error_kind::open_failed:
+      code = error_code::sqlite_open_failed;
+      break;
+    case sqlite_error_kind::configure_failed:
+      code = error_code::sqlite_configure_failed;
+      break;
+    case sqlite_error_kind::busy:
+      code = error_code::sqlite_busy;
+      category = error_category::unavailable;
+      break;
+    case sqlite_error_kind::constraint:
+      code = error_code::sqlite_constraint;
+      category = error_category::conflict;
+      break;
+    case sqlite_error_kind::io:
+      code = error_code::sqlite_io;
+      break;
+    case sqlite_error_kind::unknown:
+      code = error_code::sqlite_unknown;
+      break;
+  }
+
+  std::string detail = error.message;
+  if (!detail.empty()) {
+    detail += " (code=" + std::to_string(error.code) +
+              ", extended_code=" + std::to_string(error.extended_code) + ")";
+  }
+  return karing::domain::make_error(category, code, std::move(message), detail);
 }
 
 sqlite_connection::sqlite_connection(const std::string& path, sqlite_access access) {

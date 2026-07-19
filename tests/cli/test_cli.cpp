@@ -7,6 +7,12 @@
 #include <string>
 #include <vector>
 
+#include "backend/target.h"
+#include "backend/sqlite_backend.h"
+#include "dao/karing_dao.h"
+#include "db/db_init.h"
+#include "db/db_introspection.h"
+#include "domain/app_error.h"
 #include "utils/arg_utils.h"
 #include "utils/mime.h"
 
@@ -44,6 +50,19 @@ void test_arg_utils() {
   expect(!karing::cli::utils::is_valid_id("text"), "non-numeric id should be invalid");
 }
 
+void test_target_parsing() {
+  const auto http = karing::cli::backend::parse_target("http://127.0.0.1:8080/");
+  expect(http.kind == karing::cli::backend::target_kind::http, "http URL should select HTTP backend");
+  expect(http.value == "http://127.0.0.1:8080", "http target should be normalized");
+
+  const auto https = karing::cli::backend::parse_target("https://example.test/karing");
+  expect(https.kind == karing::cli::backend::target_kind::http, "https URL should select HTTP backend");
+
+  const auto sqlite = karing::cli::backend::parse_target("./karing.sqlite");
+  expect(sqlite.kind == karing::cli::backend::target_kind::sqlite, "path should select SQLite backend");
+  expect(sqlite.value == "./karing.sqlite", "sqlite target should preserve path");
+}
+
 void test_mime_guessing() {
   const auto root = make_temp_root("mime");
   const auto markdown = root / "note.md";
@@ -62,12 +81,100 @@ void test_mime_guessing() {
   expect(!karing::cli::utils::guess_mime_type(binary).has_value(), "unknown binary files should not get a text mime");
 }
 
+void test_sqlite_backend_text_workflow() {
+  const auto root = make_temp_root("sqlite-backend");
+  const auto db_path = root / "karing.sqlite";
+  const auto upload_path = root / "uploads";
+  const auto init = karing::db::init_sqlite_schema_file(db_path.string(), 5, false);
+  expect(init.ok, "schema init should succeed");
+
+  const karing::cli::backend::sqlite_context context{
+      .db_path = db_path.string(),
+      .json_output = false,
+  };
+
+  expect(karing::cli::backend::run_sqlite_add(context, {"alpha", "note"}) == 0,
+         "sqlite backend should add text");
+  expect(karing::cli::backend::run_sqlite_add(context, {"beta", "note"}) == 0,
+         "sqlite backend should add second text");
+  expect(karing::cli::backend::run_sqlite_get(context, 1) == 0,
+         "sqlite backend should get text by id");
+  expect(karing::cli::backend::run_sqlite_find(context, {"note", "--sort", "id", "--asc"}) == 0,
+         "sqlite backend should search text");
+  expect(karing::cli::backend::run_sqlite_mod(context, {"1", "alpha", "changed"}) == 0,
+         "sqlite backend should update text");
+  expect(karing::cli::backend::run_sqlite_swap(context, {"1", "2"}) == 0,
+         "sqlite backend should swap records");
+  expect(karing::cli::backend::run_sqlite_resequence(context) == 0,
+         "sqlite backend should resequence records");
+  expect(karing::cli::backend::run_sqlite_health(context) == 0,
+         "sqlite backend should report health");
+  expect(karing::cli::backend::run_sqlite_add(context, {"-f", "README.md"}) != 0,
+         "sqlite backend should reject file upload");
+
+  karing::dao::KaringDao dao(db_path.string(), upload_path.string());
+  const auto first = dao.get_by_id(1);
+  const auto second = dao.get_by_id(2);
+  expect(first.has_value(), "first record should exist");
+  expect(second.has_value(), "second record should exist");
+  expect(first->content == "beta note", "swap and resequence should preserve first content");
+  expect(second->content == "alpha changed", "update should persist through swap and resequence");
+
+  expect(karing::cli::backend::run_sqlite_delete(context, {"1"}) == 0,
+         "sqlite backend should delete text record");
+  expect(!dao.get_by_id(1).has_value(), "deleted record should no longer be active");
+}
+
+void test_sqlite_init_database_requires_explicit_path_and_protects_existing_file() {
+  const auto root = make_temp_root("sqlite-init");
+  const auto db_path = root / "created.sqlite";
+
+  expect(karing::cli::backend::run_sqlite_init_database({}, false) != 0,
+         "init-db should require an explicit path");
+  expect(karing::cli::backend::run_sqlite_init_database({db_path.string(), "--limit", "4"}, false) == 0,
+         "init-db should create sqlite database");
+  expect(fs::exists(db_path), "init-db should create db file");
+
+  const auto check = karing::db::inspect::check_schema(db_path.string());
+  expect(check.ok, "created sqlite database should pass schema check");
+
+  expect(karing::cli::backend::run_sqlite_init_database({db_path.string()}, false) != 0,
+         "init-db should protect existing db without force");
+  expect(karing::cli::backend::run_sqlite_init_database({db_path.string(), "--force", "--limit", "3"}, false) == 0,
+         "init-db force should allow explicit reinitialize or resize");
+}
+
+void test_common_cli_error_codes_are_stable() {
+  expect(std::string(karing::domain::to_code_string(karing::domain::error_code::validation)) == "E_VALIDATION",
+         "validation code string should remain compatible");
+  expect(std::string(karing::domain::to_code_string(karing::domain::error_code::backend_unsupported)) == "E_BACKEND",
+         "backend unsupported code string should be stable");
+  expect(std::string(karing::domain::to_code_string(karing::domain::error_code::fts_unavailable)) == "E_FTS_UNAVAILABLE",
+         "fts unavailable code string should remain compatible");
+
+  const auto root = make_temp_root("sqlite-json-error");
+  const auto db_path = root / "common-error.sqlite";
+  const auto init = karing::db::init_sqlite_schema_file(db_path.string(), 3, false);
+  expect(init.ok, "sqlite common error test db should initialize");
+  const karing::cli::backend::sqlite_context context{
+      .db_path = db_path.string(),
+      .json_output = true,
+      .show_error_details = true,
+  };
+  expect(karing::cli::backend::run_sqlite_add(context, {"-f", "README.md"}) != 0,
+         "sqlite backend JSON mode should reject file upload through common error path");
+}
+
 }  // namespace
 
 int main() {
   const std::vector<std::pair<std::string, std::function<void()>>> tests = {
       {"arg_utils", test_arg_utils},
+      {"target_parsing", test_target_parsing},
       {"mime_guessing", test_mime_guessing},
+      {"sqlite_backend_text_workflow", test_sqlite_backend_text_workflow},
+      {"sqlite_init_database_requires_explicit_path_and_protects_existing_file", test_sqlite_init_database_requires_explicit_path_and_protects_existing_file},
+      {"common_cli_error_codes_are_stable", test_common_cli_error_codes_are_stable},
   };
 
   int failed = 0;

@@ -38,6 +38,7 @@ Put simply, it is for storing notes and pulling them back out.
   - image: `ghcr.io/recelsus/karing:latest`
   - example:
     `docker run -p 8080:8080 ghcr.io/recelsus/karing:latest`
+  - the image sets `KARING_LISTEN=0.0.0.0` explicitly
 
 - build
   - see `docs/build.md`
@@ -45,7 +46,10 @@ Put simply, it is for storing notes and pulling them back out.
 ## Run Options
 
 - server settings are provided only through CLI options and environment variables
+- public deployments should run behind a reverse proxy; TLS termination is expected at the proxy
 - default paths:
+  - listen: `127.0.0.1:8080`
+  - Docker image listen: `0.0.0.0:8080`
   - DB: `/var/lib/karing/karing.sqlite`
   - fallback DB: `$XDG_DATA_HOME/karing/karing.sqlite` if the default location is not available
   - if `XDG_DATA_HOME` is unset: `$HOME/.local/share/karing/karing.sqlite`
@@ -124,6 +128,7 @@ Put simply, it is for storing notes and pulling them back out.
   - returns service state and DB information as JSON
 
 - when `base_path` is set, the endpoints are also reachable under `<base_path>/`, `<base_path>/swap`, `<base_path>/resequence`, `<base_path>/search`, `<base_path>/search/live`, and `<base_path>/health`
+- `base_path` can be a path such as `/karing` or a full URL such as `https://example.test/karing`; only the path part is used
 
 For request and response examples, see `docs/requests.md`.
 

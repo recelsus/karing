@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(KARING_BUILD_SERVER "Build karing-server" ON)
 option(KARING_BUILD_CLI "Build karing CLI" ON)
+option(KARING_CLI_ENABLE_HTTP_BACKEND "Build karing CLI with HTTP backend support" ON)
 
 if(NOT KARING_BUILD_SERVER AND NOT KARING_BUILD_CLI)
   message(FATAL_ERROR "At least one of KARING_BUILD_SERVER or KARING_BUILD_CLI must be ON")
@@ -20,7 +21,7 @@ if(KARING_BUILD_SERVER)
 endif()
 
 set(GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated")
-if(KARING_BUILD_SERVER)
+if(KARING_BUILD_SERVER OR KARING_BUILD_CLI)
   file(MAKE_DIRECTORY "${GENERATED_INCLUDE_DIR}")
 
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sqlite/sql/schema_base.sql" KARING_SCHEMA_BASE_SQL_RAW)
@@ -49,8 +50,11 @@ target_include_directories(karing_project_options INTERFACE
 
 include(GNUInstallDirs)
 
-if(KARING_BUILD_SERVER)
+if(KARING_BUILD_SERVER OR KARING_BUILD_CLI)
   add_subdirectory(sqlite)
+endif()
+
+if(KARING_BUILD_SERVER)
   add_subdirectory(server)
 endif()
 

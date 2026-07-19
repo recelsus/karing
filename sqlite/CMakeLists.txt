@@ -6,6 +6,9 @@ add_library(karing_sqlite STATIC
   db/db_init.cpp
   db/db_introspection.cpp
   storage/file_storage.cpp
+  domain/app_error.cpp
+  domain/search_query.cpp
+  domain/entry_operations.cpp
   store/entry_store.cpp
   repository/entry_repository.cpp
   repository/store_state_repository.cpp

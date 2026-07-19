@@ -38,6 +38,7 @@ DrogonベースのPastebin風APIサーバー。
   - イメージ: `ghcr.io/recelsus/karing:latest`
   - 例:
     `docker run -p 8080:8080 ghcr.io/recelsus/karing:latest`
+  - イメージでは `KARING_LISTEN=0.0.0.0` を明示設定しています。
 
 - ビルド
   - `docs/build-ja.md` を参照。
@@ -45,7 +46,10 @@ DrogonベースのPastebin風APIサーバー。
 ## Run Options
 
 - サーバー設定は CLI オプションと環境変数だけで与えます。
+- 公開利用ではリバースプロキシ配下を推奨し、TLS終端はプロキシ側で行う想定です。
 - 既定パス:
+  - listen: `127.0.0.1:8080`
+  - Docker image listen: `0.0.0.0:8080`
   - DB: `/var/lib/karing/karing.sqlite`
   - フォールバックDB: 既定位置が使えない場合は `$XDG_DATA_HOME/karing/karing.sqlite`
   - `XDG_DATA_HOME` が無ければ `$HOME/.local/share/karing/karing.sqlite`
@@ -123,6 +127,7 @@ DrogonベースのPastebin風APIサーバー。
   - サービス状態と DB 情報を JSON で返却
 
 - base_path指定時は `<base_path>/`、`<base_path>/swap`、`<base_path>/resequence`、`<base_path>/search`、`<base_path>/search/live`、`<base_path>/health` で到達可能。
+- `base_path` は `/karing` のような path または `https://example.test/karing` のような URL 全体で指定できます。内部では path 部分だけを使います。
 
 リクエスト例とレスポンス例は `docs/requests-ja.md` を参照してください。
 

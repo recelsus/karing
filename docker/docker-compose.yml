@@ -13,6 +13,7 @@ services:
       KARING_DB_PATH: "/var/lib/karing/karing.sqlite"
       KARING_UPLOAD_PATH: "/var/lib/karing/uploads"
       KARING_LOG_PATH: "/var/log/karing"
+      KARING_LISTEN: "0.0.0.0"
       # KARING_BASE_PATH: /myapp
       # KARING_LIMIT: "100"
       # KARING_MAX_FILE: "20"

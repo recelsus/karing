@@ -4,6 +4,8 @@
 
 #include <sqlite3.h>
 
+#include "domain/app_error.h"
+
 namespace karing::db {
 
 constexpr int kSqliteBusyTimeoutMs = 5000;
@@ -64,5 +66,7 @@ class sqlite_connection {
 
 sqlite_error make_sqlite_error(sqlite3* db, sqlite_error_kind fallback_kind);
 sqlite_error_kind classify_sqlite_code(int code);
+karing::domain::app_error to_app_error(const sqlite_error& error,
+                                        std::string message = "SQLite operation failed");
 
 }  // namespace karing::db

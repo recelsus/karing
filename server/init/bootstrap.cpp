@@ -12,6 +12,7 @@
 #include "db/db_introspection.h"
 #include "db/db_path.h"
 #include "init/cli_output.h"
+#include "utils/base_path.h"
 #include "utils/options.h"
 #include "utils/limits.h"
 #include "version.h"
@@ -140,7 +141,7 @@ int bootstrap::execute() {
   } catch (...) {
   }
 
-  const std::string listen_address = options.listen_address.empty() ? "0.0.0.0" : options.listen_address;
+  const std::string listen_address = options.listen_address.empty() ? "127.0.0.1" : options.listen_address;
   const int listen_port = options.port > 0 ? options.port : 8080;
   const int max_file_mb = options.max_file_bytes;
   const int max_text_mb = options.max_text_bytes;
@@ -180,8 +181,7 @@ int bootstrap::execute() {
     }
   }
 
-  if (options.base_path.empty()) options.base_path = "/";
-  if (options.base_path.size() > 1 && options.base_path.back() == '/') options.base_path.pop_back();
+  options.base_path = karing::base_path::normalize(options.base_path);
 
   fs::path upload_path;
   if (!options.upload_path.empty()) {
