@@ -8,6 +8,13 @@ on:
       - 'server/version.h'
       - 'CMakeLists.txt'
       - '.github/workflows/build.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'cli/**'
+      - 'server/version.h'
+      - 'CMakeLists.txt'
+      - '.github/workflows/build.yml'
   workflow_dispatch: {}
 
 jobs:

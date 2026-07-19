@@ -37,13 +37,10 @@ search_result make_search_error(search_error error, std::optional<std::string> d
 }  // namespace
 
 entry_operations::entry_operations(std::string db_path, int max_limit)
-    : entry_operations(std::move(db_path), "", max_limit) {}
-
-entry_operations::entry_operations(std::string db_path, std::string upload_path, int max_limit)
-    : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)), max_limit_(max_limit) {}
+    : db_path_(std::move(db_path)), max_limit_(max_limit) {}
 
 karing::dao::KaringDao entry_operations::make_dao() const {
-  return karing::dao::KaringDao(db_path_, upload_path_);
+  return karing::dao::KaringDao(db_path_);
 }
 
 std::optional<EntryRecord> entry_operations::latest_record() const {

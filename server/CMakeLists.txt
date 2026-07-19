@@ -23,6 +23,7 @@ add_library(karing_server OBJECT
   http/request_params.cpp
   http/record_json.cpp
   http/download_response.cpp
+  services/file_record_service.cpp
   services/root_service.cpp
   services/search_service.cpp
   controllers/karing_root_controller.cpp

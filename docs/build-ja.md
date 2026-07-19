@@ -95,6 +95,8 @@ cmake --build build -j
 
 SQLite-only CLI option は、HTTP 呼び出しが不要な container / embedded 配布 job 向けです。container build の制約ではありません。workflow 側で `KARING_CLI_ENABLE_HTTP_BACKEND=ON` のままにすれば、container 内でも通常版 CLI をビルドできます。
 
+local SQLite CLI は `karing_sqlite` のみをリンクします。file body storage は `karing_file_storage` と `karing_sqlite_file` に分離され、server と file operation test からリンクされます。SQLite-only CLI build からはリンクされません。
+
 ## Test
 
 ```bash

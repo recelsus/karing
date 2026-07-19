@@ -65,6 +65,8 @@ SQLite targets support text add/get/find/mod/delete, `swap`, `move`, `resequence
 
 `--url`, `KARING_URL`, and `--id` are not supported. Either `--target` or `KARING_TARGET` must be set.
 
+If a local SQLite database remains locked beyond the busy timeout, plain output reports `ERROR: database is busy`; JSON output returns `E_SQLITE_BUSY`.
+
 ## Run Options
 
 - server settings are provided only through CLI options and environment variables

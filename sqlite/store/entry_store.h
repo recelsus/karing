@@ -11,6 +11,7 @@ namespace karing::store {
 
 class entry_store {
  public:
+  explicit entry_store(std::string db_path);
   entry_store(std::string db_path, std::string upload_path);
 
   int insert_text(const std::string& content) const;

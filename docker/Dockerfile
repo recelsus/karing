@@ -2,7 +2,7 @@
 
 ARG BUILDER_IMAGE=drogonframework/drogon:latest
 ARG RUNTIME_IMAGE=debian:bookworm-slim
-ARG KARING_CLI_ENABLE_HTTP_BACKEND=ON
+ARG KARING_CLI_ENABLE_HTTP_BACKEND=OFF
 
 FROM ${BUILDER_IMAGE} AS builder
 ARG KARING_CLI_ENABLE_HTTP_BACKEND
@@ -31,6 +31,7 @@ FROM ${RUNTIME_IMAGE} AS runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     XDG_DATA_HOME=/var/lib/karing \
     KARING_DB_PATH=/var/lib/karing/karing.sqlite \
+    KARING_TARGET=/var/lib/karing/karing.sqlite \
     KARING_UPLOAD_PATH=/var/lib/karing/uploads \
     KARING_LOG_PATH=/var/log/karing \
     KARING_LISTEN=0.0.0.0

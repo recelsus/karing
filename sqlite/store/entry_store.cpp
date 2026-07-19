@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <utility>
 
 #include "dao/karing_dao.h"
 #include "dao/karing_dao_internal.h"
@@ -9,8 +10,7 @@
 
 namespace karing::store {
 
-entry_store::entry_store(std::string db_path, std::string upload_path)
-    : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)) {}
+entry_store::entry_store(std::string db_path) : db_path_(std::move(db_path)) {}
 
 int entry_store::insert_text(const std::string& content) const {
   dao::detail::Db db(db_path_);

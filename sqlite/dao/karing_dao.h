@@ -23,6 +23,7 @@ struct KaringRecord {
 
 class KaringDao {
  public:
+  explicit KaringDao(std::string db_path);
   KaringDao(std::string db_path, std::string upload_path);
 
 

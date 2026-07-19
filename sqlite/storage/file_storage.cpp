@@ -40,10 +40,11 @@ bool file_storage::read(const std::string& path, std::string& out_data) {
   return true;
 }
 
-void file_storage::remove_if_any(const std::string& path) {
-  if (path.empty()) return;
+bool file_storage::remove_if_any(const std::string& path) {
+  if (path.empty()) return true;
   std::error_code ec;
   fs::remove(path, ec);
+  return !ec;
 }
 
 }  // namespace karing::storage

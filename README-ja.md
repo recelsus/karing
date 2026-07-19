@@ -65,6 +65,8 @@ SQLite target では text add/get/find/mod/delete、`swap`、`move`、`resequenc
 
 `--url`、`KARING_URL`、`--id` はサポートしません。`--target` または `KARING_TARGET` のどちらかが必要です。
 
+local SQLite database の lock が busy timeout を超えて残る場合、plain output は `ERROR: database is busy`、JSON output は `E_SQLITE_BUSY` を返します。
+
 ## Run Options
 
 - サーバー設定は CLI オプションと環境変数だけで与えます。

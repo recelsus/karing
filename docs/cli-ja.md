@@ -109,6 +109,8 @@ SQLite target で対応しない操作:
 
 SQLite target で file または text-file record を `--json` なしで取得した場合、file body ではなく metadata を表示します。
 
+SQLite database の lock が busy timeout を超えて残る場合、plain output は `ERROR: database is busy`、JSON output は `E_SQLITE_BUSY` を返します。
+
 ## Example
 
 ```bash

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -9,6 +10,8 @@
 #include <vector>
 
 #include <sqlite3.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "app.h"
 #include "backend/target.h"
@@ -53,6 +56,33 @@ void write_file(const fs::path& path, const std::string& data) {
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) throw test_failure("failed to create fixture");
   out.write(data.data(), static_cast<std::streamsize>(data.size()));
+}
+
+std::string capture_stderr(const fs::path& path, const std::function<int()>& fn, int& status) {
+  const int saved = dup(STDERR_FILENO);
+  if (saved < 0) throw test_failure("failed to duplicate stderr");
+  const int out = open(path.string().c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0600);
+  if (out < 0) {
+    close(saved);
+    throw test_failure("failed to open stderr capture");
+  }
+  if (dup2(out, STDERR_FILENO) < 0) {
+    close(out);
+    close(saved);
+    throw test_failure("failed to redirect stderr");
+  }
+  close(out);
+
+  status = fn();
+  std::fflush(stderr);
+  if (dup2(saved, STDERR_FILENO) < 0) {
+    close(saved);
+    throw test_failure("failed to restore stderr");
+  }
+  close(saved);
+
+  std::ifstream in(path, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 void test_arg_utils() {
@@ -126,7 +156,7 @@ void test_sqlite_backend_text_workflow() {
   expect(karing::cli::backend::run_sqlite_add(context, {"-f", "README.md"}) != 0,
          "sqlite backend should reject file upload");
 
-  karing::dao::KaringDao dao(db_path.string(), upload_path.string());
+  karing::dao::KaringDao dao(db_path.string());
   const auto first = dao.get_by_id(1);
   const auto second = dao.get_by_id(2);
   expect(first.has_value(), "first record should exist");
@@ -154,7 +184,7 @@ void test_sqlite_add_reuses_recently_deleted_slot() {
   expect(karing::cli::backend::run_sqlite_delete(context, {}) == 0, "recent latest delete should succeed");
   expect(karing::cli::backend::run_sqlite_add(context, {"replacement"}) == 0, "add after delete should succeed");
 
-  karing::dao::KaringDao dao(db_path.string(), (root / "uploads").string());
+  karing::dao::KaringDao dao(db_path.string());
   const auto reused = dao.get_by_id(2);
   expect(reused.has_value(), "deleted slot should be reused");
   expect(reused->content == "replacement", "reused slot should contain new content");
@@ -180,7 +210,7 @@ void test_sqlite_delete_without_id_rejects_expired_latest() {
 
   expect(karing::cli::backend::run_sqlite_delete(context, {}) != 0,
          "delete without id should reject expired latest record");
-  karing::dao::KaringDao dao(db_path.string(), (root / "uploads").string());
+  karing::dao::KaringDao dao(db_path.string());
   expect(dao.get_by_id(1).has_value(), "expired latest record should remain active");
 }
 
@@ -221,6 +251,45 @@ void test_common_cli_error_codes_are_stable() {
   };
   expect(karing::cli::backend::run_sqlite_add(context, {"-f", "README.md"}) != 0,
          "sqlite backend JSON mode should reject file upload through common error path");
+}
+
+void test_sqlite_busy_errors_use_common_cli_output() {
+  const auto root = make_temp_root("sqlite-busy");
+  const auto db_path = root / "busy.sqlite";
+  const auto init = karing::db::init_sqlite_schema_file(db_path.string(), 3, false);
+  expect(init.ok, "busy test db should initialize");
+
+  sqlite3* db = nullptr;
+  expect(sqlite3_open_v2(db_path.string().c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) == SQLITE_OK,
+         "busy lock db should open");
+  exec_sql(db, "BEGIN IMMEDIATE;");
+
+  int plain_status = 0;
+  const karing::cli::backend::sqlite_context plain_context{
+      .db_path = db_path.string(),
+      .json_output = false,
+  };
+  const auto plain_error = capture_stderr(root / "plain.err", [&]() {
+    return karing::cli::backend::run_sqlite_add(plain_context, {"busy"});
+  }, plain_status);
+  expect(plain_status != 0, "plain busy add should fail");
+  expect(plain_error.find("ERROR: database is busy") != std::string::npos,
+         "plain busy error should be concise");
+
+  int json_status = 0;
+  const karing::cli::backend::sqlite_context json_context{
+      .db_path = db_path.string(),
+      .json_output = true,
+  };
+  const auto json_error = capture_stderr(root / "json.err", [&]() {
+    return karing::cli::backend::run_sqlite_add(json_context, {"busy"});
+  }, json_status);
+  expect(json_status != 0, "json busy add should fail");
+  expect(json_error.find("\"code\":\"E_SQLITE_BUSY\"") != std::string::npos,
+         "json busy error should expose sqlite busy code");
+
+  exec_sql(db, "ROLLBACK;");
+  sqlite3_close(db);
 }
 
 void test_cli_routes_explicit_commands_without_implicit_add() {
@@ -282,7 +351,7 @@ void test_cli_routes_explicit_commands_without_implicit_add() {
     expect(karing::cli::run(2, argv) == 0, "del without id should delete recent latest record");
   }
 
-  karing::dao::KaringDao dao(db_path.string(), (root / "uploads").string());
+  karing::dao::KaringDao dao(db_path.string());
   expect(!dao.get_by_id(1).has_value(), "recent delete should remove the created record");
   expect(!dao.get_by_id(2).has_value(), "unknown positional string should not create a second record");
   unsetenv("KARING_TARGET");
@@ -306,6 +375,7 @@ int main() {
       {"sqlite_delete_without_id_rejects_expired_latest", test_sqlite_delete_without_id_rejects_expired_latest},
       {"sqlite_init_database_requires_explicit_path_and_protects_existing_file", test_sqlite_init_database_requires_explicit_path_and_protects_existing_file},
       {"common_cli_error_codes_are_stable", test_common_cli_error_codes_are_stable},
+      {"sqlite_busy_errors_use_common_cli_output", test_sqlite_busy_errors_use_common_cli_output},
       {"cli_routes_explicit_commands_without_implicit_add", test_cli_routes_explicit_commands_without_implicit_add},
   };
 

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <json/json.h>
+#include <sqlite3.h>
 
 #include "db/db_init.h"
 #include "db/db_introspection.h"
@@ -53,6 +54,47 @@ karing::domain::app_error database_error(std::string message, std::string detail
                                     karing::domain::error_code::sqlite_unknown,
                                     std::move(message),
                                     std::move(detail));
+}
+
+karing::domain::app_error database_busy_error() {
+  return karing::domain::make_error(karing::domain::error_category::unavailable,
+                                    karing::domain::error_code::sqlite_busy,
+                                    "database is busy");
+}
+
+bool is_busy_code(int code) {
+  const int primary = code & 0xff;
+  return primary == SQLITE_BUSY || primary == SQLITE_LOCKED;
+}
+
+bool database_is_busy(const std::string& db_path) {
+  sqlite3* db = nullptr;
+  if (sqlite3_open_v2(db_path.c_str(), &db, SQLITE_OPEN_READWRITE, nullptr) != SQLITE_OK) {
+    const int code = db ? sqlite3_extended_errcode(db) : SQLITE_ERROR;
+    if (db) sqlite3_close(db);
+    return is_busy_code(code);
+  }
+  sqlite3_extended_result_codes(db, 1);
+  sqlite3_busy_timeout(db, 0);
+
+  char* errmsg = nullptr;
+  const int rc = sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, &errmsg);
+  if (errmsg) sqlite3_free(errmsg);
+  if (rc == SQLITE_OK) {
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    return false;
+  }
+  const int code = sqlite3_extended_errcode(db);
+  sqlite3_close(db);
+  return is_busy_code(code);
+}
+
+karing::domain::app_error database_operation_error(const sqlite_context& context,
+                                                   std::string message,
+                                                   std::string detail) {
+  if (database_is_busy(context.db_path)) return database_busy_error();
+  return database_error(std::move(message), std::move(detail));
 }
 
 int print_error(const sqlite_context& context, const karing::domain::app_error& error) {
@@ -219,7 +261,7 @@ int run_sqlite_add(const sqlite_context& context, const std::vector<std::string>
   if (content.empty()) return print_error(context, validation_error("text content is required"));
 
   const int id = make_operations(context).create_text(content);
-  if (id < 0) return print_error(context, database_error("insert failed", "create_text returned a negative id"));
+  if (id < 0) return print_error(context, database_operation_error(context, "insert failed", "create_text returned a negative id"));
   if (context.json_output) print_json(id_json("Created", id));
   else std::cout << "created id: " << id << '\n';
   return 0;
@@ -243,7 +285,7 @@ int run_sqlite_delete(const sqlite_context& context, const std::vector<std::stri
 
   const bool ok = args.empty() ? operations.delete_latest_recent(600) : operations.delete_by_id(record->id);
   if (!ok && args.empty()) return print_error(context, not_found_error("No recent latest record to delete"));
-  if (!ok) return print_error(context, database_error("delete failed", "entry operation returned false"));
+  if (!ok) return print_error(context, database_operation_error(context, "delete failed", "entry operation returned false"));
   if (context.json_output) print_json(id_json("OK", record->id));
   return 0;
 }
@@ -351,7 +393,7 @@ int run_sqlite_mod(const sqlite_context& context, const std::vector<std::string>
   const auto record = operations.record_by_id(*id);
   if (!record.has_value()) return print_error(context, not_found_error());
   if (has_file_metadata(*record)) return print_error(context, backend_error("sqlite backend does not support modifying file records"));
-  if (!operations.replace_text(*id, content)) return print_error(context, database_error("update failed", "replace_text returned false"));
+  if (!operations.replace_text(*id, content)) return print_error(context, database_operation_error(context, "update failed", "replace_text returned false"));
 
   if (context.json_output) print_json(id_json("OK", *id));
   else std::cout << "updated id: " << *id << '\n';
@@ -367,7 +409,7 @@ int run_sqlite_swap(const sqlite_context& context, const std::vector<std::string
   if (*id1 == *id2) return print_error(context, validation_error("swap ids must be different"));
 
   const auto swapped = make_operations(context).swap(*id1, *id2);
-  if (!swapped.has_value()) return print_error(context, database_error("swap failed", "swap returned no records"));
+  if (!swapped.has_value()) return print_error(context, database_operation_error(context, "swap failed", "swap returned no records"));
 
   if (context.json_output) {
     Json::Value data(Json::arrayValue);
@@ -389,7 +431,10 @@ int run_sqlite_move(const sqlite_context& context, const std::vector<std::string
   if (*id == *before_id) return print_error(context, validation_error("move ids must be different"));
 
   const auto moved = make_operations(context).move_before(*id, *before_id);
-  if (!moved.has_value()) return print_error(context, not_found_error("Move failed"));
+  if (!moved.has_value()) {
+    if (database_is_busy(context.db_path)) return print_error(context, database_busy_error());
+    return print_error(context, not_found_error("Move failed"));
+  }
 
   if (context.json_output) {
     Json::Value data(Json::arrayValue);
@@ -409,7 +454,7 @@ int run_sqlite_move(const sqlite_context& context, const std::vector<std::string
 int run_sqlite_resequence(const sqlite_context& context) {
   if (const int status = ensure_schema(context); status != 0) return status;
   const auto resequenced = make_operations(context).resequence();
-  if (!resequenced.has_value()) return print_error(context, database_error("resequence failed", "resequence returned no records"));
+  if (!resequenced.has_value()) return print_error(context, database_operation_error(context, "resequence failed", "resequence returned no records"));
 
   if (context.json_output) {
     Json::Value data(Json::arrayValue);

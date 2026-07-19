@@ -1,10 +1,15 @@
 #include "karing_dao_internal.h"
 
+#include <utility>
+
 #include "repository/entry_repository.h"
 #include "storage/file_storage.h"
 #include "store/entry_store.h"
 
 namespace karing::dao {
+
+KaringDao::KaringDao(std::string db_path, std::string upload_path)
+    : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)) {}
 
 int KaringDao::insert_file(const std::string& filename, const std::string& mime, const std::string& data) {
   store::entry_store store(db_path_, upload_path_);

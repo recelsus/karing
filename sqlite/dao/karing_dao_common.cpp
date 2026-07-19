@@ -1,11 +1,11 @@
 #include "karing_dao_internal.h"
 
 #include <chrono>
+#include <utility>
 
 namespace karing::dao {
 
-KaringDao::KaringDao(std::string db_path, std::string upload_path)
-    : db_path_(std::move(db_path)), upload_path_(std::move(upload_path)) {}
+KaringDao::KaringDao(std::string db_path) : db_path_(std::move(db_path)) {}
 
 namespace detail {
 

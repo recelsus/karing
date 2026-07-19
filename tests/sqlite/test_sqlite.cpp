@@ -17,6 +17,7 @@
 #include "db/sqlite_connection.h"
 #include "common/error/app_error.h"
 #include "domain/entry_operations.h"
+#include "storage/file_storage.h"
 
 namespace fs = std::filesystem;
 
@@ -150,7 +151,7 @@ void test_concurrent_writer_waits_for_short_transaction() {
 
   int inserted_id = -1;
   std::thread writer([&]() {
-    karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+    karing::dao::KaringDao dao(env.db_path.string());
     inserted_id = dao.insert_text("waited for lock");
   });
 
@@ -211,6 +212,21 @@ void test_text_file_upload_is_text_record_with_blob() {
   expect(filename == "note.txt", "blob filename should match");
   expect(mime == "text/plain", "blob mime should match");
   expect(data == "hello text file", "blob content should match");
+}
+
+void test_file_storage_remove_reports_failure() {
+  const auto env = make_temp_env("file-remove");
+  const auto dir = env.upload_path / "not-empty";
+  fs::create_directories(dir);
+  {
+    std::ofstream out(dir / "child.txt", std::ios::binary);
+    out << "child";
+  }
+
+  expect(!karing::storage::file_storage::remove_if_any(dir.string()),
+         "remove_if_any should report non-empty directory removal failure");
+  expect(fs::exists(dir), "failed removal should leave the path in place");
+  expect(karing::storage::file_storage::remove_if_any(""), "empty path removal should succeed as a no-op");
 }
 
 void test_domain_operations_search() {
@@ -495,6 +511,7 @@ int main() {
       {"concurrent_writer_waits_for_short_transaction", test_concurrent_writer_waits_for_short_transaction},
       {"dao_manages_file_lifecycle", test_dao_manages_file_lifecycle},
       {"text_file_upload_is_text_record_with_blob", test_text_file_upload_is_text_record_with_blob},
+      {"file_storage_remove_reports_failure", test_file_storage_remove_reports_failure},
       {"domain_operations_search", test_domain_operations_search},
       {"force_shrink_reassigns_ids_and_removes_old_files", test_force_shrink_reassigns_ids_and_removes_old_files},
       {"swap_entries_exchanges_slot_contents", test_swap_entries_exchanges_slot_contents},

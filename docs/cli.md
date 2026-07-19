@@ -109,6 +109,8 @@ SQLite targets do not support:
 
 When a file or text-file record is fetched from a SQLite target without `--json`, the CLI prints metadata instead of the file body.
 
+If the SQLite database remains locked beyond the busy timeout, plain output reports `ERROR: database is busy`; JSON output returns `E_SQLITE_BUSY`.
+
 ## Example
 
 ```bash

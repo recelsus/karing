@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -27,6 +28,7 @@
 #include "db/db_init.h"
 #include "db/sqlite_connection.h"
 #include "common/error/app_error.h"
+#include "repository/entry_repository.h"
 #include "services/root_service.h"
 #include "utils/base_path.h"
 #include "utils/json_response.h"
@@ -317,7 +319,7 @@ void test_root_move() {
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
   set_current_options(env);
 
-  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  karing::dao::KaringDao dao(env.db_path.string());
   expect(dao.insert_text("a") == 1, "insert slot 1");
   expect(dao.insert_text("b") == 2, "insert slot 2");
   expect(dao.insert_text("c") == 3, "insert slot 3");
@@ -355,7 +357,7 @@ void test_root_resequence() {
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
   set_current_options(env);
 
-  karing::dao::KaringDao dao(env.db_path.string(), env.upload_path.string());
+  karing::dao::KaringDao dao(env.db_path.string());
   expect(dao.insert_text("one") == 1, "insert slot 1");
   expect(dao.insert_text("two") == 2, "insert slot 2");
   expect(dao.insert_text("three") == 3, "insert slot 3");
@@ -526,6 +528,34 @@ void test_root_service_replace_text_removes_file_body() {
   expect(!record->is_file && record->content == "plain text", "slot should become a text record");
 }
 
+void test_root_service_delete_keeps_record_when_file_remove_fails() {
+  const auto env = make_temp_env("delete-file-fails");
+  expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
+
+  karing::services::root_service service(env.db_path.string(), env.upload_path.string());
+  const int id = service.create_file("blocked.txt", "text/plain", "blocked-body");
+  expect(id == 1, "file insert should succeed");
+
+  karing::repository::entry_repository repo(env.db_path.string());
+  karing::dao::KaringRecord record{};
+  std::string file_path;
+  expect(repo.get_file_record(id, record, file_path), "file path should be readable");
+  expect(!file_path.empty(), "file path should not be empty");
+
+  std::error_code ec;
+  fs::remove(file_path, ec);
+  expect(!ec, "test should remove original file body");
+  fs::create_directories(file_path, ec);
+  expect(!ec, "test should create blocking directory at file path");
+  {
+    std::ofstream child(fs::path(file_path) / "child.txt", std::ios::binary);
+    child << "child";
+  }
+
+  expect(!service.delete_by_id(id), "delete_by_id should fail when file body removal fails");
+  expect(service.record_by_id(id).has_value(), "record should remain when file body removal fails");
+}
+
 void test_root_file_and_text_file_responses() {
   const auto env = make_temp_env("files");
   expect(karing::db::init_sqlite_schema_file(env.db_path.string(), 5, false).ok, "db init should succeed");
@@ -609,6 +639,7 @@ int main() {
       {"root_resequence", test_root_resequence},
       {"root_service_delete_removes_file_body", test_root_service_delete_removes_file_body},
       {"root_service_replace_text_removes_file_body", test_root_service_replace_text_removes_file_body},
+      {"root_service_delete_keeps_record_when_file_remove_fails", test_root_service_delete_keeps_record_when_file_remove_fails},
       {"root_file_and_text_file_responses", test_root_file_and_text_file_responses},
       {"search_and_live_search", test_search_and_live_search},
       {"health_response", test_health_response},

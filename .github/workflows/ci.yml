@@ -1,4 +1,4 @@
-name: test
+name: ci
 
 on:
   push:
@@ -9,15 +9,16 @@ on:
       - 'cli/**'
       - 'tests/**'
       - 'CMakeLists.txt'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/ci.yml'
   pull_request:
+    branches: [ master ]
     paths:
       - 'server/**'
       - 'sqlite/**'
       - 'cli/**'
       - 'tests/**'
       - 'CMakeLists.txt'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch: {}
 
 jobs:
