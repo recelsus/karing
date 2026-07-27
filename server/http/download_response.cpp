@@ -56,7 +56,6 @@ drogon::HttpResponsePtr make_text_response(const std::string& body) {
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setStatusCode(drogon::k200OK);
   resp->setContentTypeCode(drogon::CT_TEXT_PLAIN);
-  resp->addHeader("Content-Type", "text/plain; charset=utf-8");
   resp->setBody(body);
   return resp;
 }
